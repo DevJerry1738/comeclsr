@@ -1,0 +1,118 @@
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { trpc } from "@/providers/trpc";
+import { useAuth } from "@/hooks/useAuth";
+import { Link, useNavigate } from "react-router";
+import {
+  Users, CreditCard, Shield, MessageCircle, Ticket, DollarSign,
+  ArrowRight, Heart, LogOut, Activity, TrendingUp, UserCheck
+} from "lucide-react";
+
+export default function AdminDashboard() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const { data: stats } = trpc.admin.dashboardStats.useQuery(undefined, { enabled: user?.role === "admin" });
+
+  if (!user || user.role !== "admin") return null;
+
+  const statCards = [
+    { label: "Total Users", value: stats?.totalUsers || 0, icon: Users, color: "text-blue-400", bg: "bg-blue-500/10", link: "/admin/users" },
+    { label: "Active Users", value: stats?.activeUsers || 0, icon: UserCheck, color: "text-emerald-400", bg: "bg-emerald-500/10", link: "/admin/users" },
+    { label: "Revenue", value: `$${stats?.revenue?.toFixed(2) || "0.00"}`, icon: DollarSign, color: "text-amber-400", bg: "bg-amber-500/10", link: "/admin/payments" },
+    { label: "Pending Payments", value: stats?.pendingPayments || 0, icon: CreditCard, color: "text-rose-400", bg: "bg-rose-500/10", link: "/admin/payments" },
+    { label: "Active Conversations", value: stats?.activeConversations || 0, icon: MessageCircle, color: "text-violet-400", bg: "bg-violet-500/10", link: "/admin/conversations" },
+    { label: "Open Tickets", value: stats?.openTickets || 0, icon: Ticket, color: "text-orange-400", bg: "bg-orange-500/10", link: "/admin/tickets" },
+  ];
+
+  const quickLinks = [
+    { label: "Users", desc: "Manage all user accounts", icon: Users, link: "/admin/users", color: "text-blue-400" },
+    { label: "Agents", desc: "Create & assign agents", icon: Shield, link: "/admin/agents", color: "text-violet-400" },
+    { label: "Payments", desc: "Review & approve payments", icon: CreditCard, link: "/admin/payments", color: "text-rose-400" },
+    { label: "KYC", desc: "Verify user identities", icon: Shield, link: "/admin/kyc", color: "text-emerald-400" },
+    { label: "Conversations", desc: "Monitor all chats", icon: MessageCircle, link: "/admin/conversations", color: "text-amber-400" },
+    { label: "Tickets", desc: "Support management", icon: Ticket, link: "/admin/tickets", color: "text-orange-400" },
+    { label: "Settings", desc: "System configuration", icon: Activity, link: "/admin/settings", color: "text-neutral-400" },
+  ];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-neutral-950 via-neutral-900 to-neutral-950 text-white">
+      <header className="border-b border-white/10 bg-neutral-900/50 backdrop-blur-xl px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center"><Heart className="w-4 h-4 text-white" /></div>
+          <div>
+            <h1 className="font-semibold">Admin Control</h1>
+            <p className="text-xs text-neutral-500">ComeClsr Management</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Link to="/dashboard">
+            <Button variant="ghost" size="sm" className="text-neutral-400 hover:text-white">User View</Button>
+          </Link>
+          <Button variant="ghost" size="icon" onClick={logout} className="text-neutral-400 hover:text-red-400 hover:bg-red-500/10"><LogOut className="w-5 h-5" /></Button>
+        </div>
+      </header>
+
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold mb-2">Dashboard Overview</h2>
+          <p className="text-neutral-400">Full system control and analytics</p>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+          {statCards.map((stat) => (
+            <Card key={stat.label} className="bg-neutral-900/60 border-neutral-800 hover:border-neutral-700 transition-all cursor-pointer" onClick={() => navigate(stat.link)}>
+              <CardContent className="p-4">
+                <div className={`w-10 h-10 rounded-lg ${stat.bg} flex items-center justify-center mb-3`}>
+                  <stat.icon className={`w-5 h-5 ${stat.color}`} />
+                </div>
+                <p className="text-2xl font-bold">{stat.value}</p>
+                <p className="text-xs text-neutral-500 mt-1">{stat.label}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Quick Links */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {quickLinks.map((item) => (
+            <Card key={item.label} className="bg-neutral-900/60 border-neutral-800 hover:bg-neutral-800/60 transition-all cursor-pointer group" onClick={() => navigate(item.link)}>
+              <CardContent className="p-6 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors">
+                    <item.icon className={`w-6 h-6 ${item.color}`} />
+                  </div>
+                  <div>
+                    <p className="font-medium">{item.label}</p>
+                    <p className="text-sm text-neutral-500">{item.desc}</p>
+                  </div>
+                </div>
+                <ArrowRight className="w-5 h-5 text-neutral-600 group-hover:text-white transition-colors" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Revenue Chart Placeholder */}
+        <Card className="bg-neutral-900/60 border-neutral-800 mt-8">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-emerald-400" />
+              Revenue Overview
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-8">
+            <div className="flex items-end gap-4 h-48">
+              {[40, 65, 45, 80, 55, 90, 70, 85, 60, 95, 75, 88].map((h, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-2">
+                  <div className="w-full bg-gradient-to-t from-rose-500/30 to-rose-500/60 rounded-t-sm" style={{ height: `${h}%` }} />
+                  <span className="text-[10px] text-neutral-500">{["J","F","M","A","M","J","J","A","S","O","N","D"][i]}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
