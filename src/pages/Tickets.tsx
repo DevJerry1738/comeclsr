@@ -1,23 +1,55 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { trpc } from "@/providers/trpc";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { ArrowLeft, Heart, LogOut, Plus, Send, Ticket } from "lucide-react";
 
 export default function Tickets() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [subject, setSubject] = useState("");
   const [category, setCategory] = useState("general");
   const [replyText, setReplyText] = useState("");
   const [activeTicket, setActiveTicket] = useState<number | null>(null);
 
-  const { data: tickets, refetch } = trpc.ticket.myTickets.useQuery(undefined, { enabled: !!user });
-  const createTicket = trpc.ticket.create.useMutation({ onSuccess: () => { toast.success("Ticket created!"); setSubject(""); refetch(); } });
-  const replyTicket = trpc.ticket.reply.useMutation({ onSuccess: () => { setReplyText(""); refetch(); } });
+  // Redirect admin users to admin dashboard
+  useEffect(() => {
+    if (user && user.role === "admin") {
+      navigate("/admin", { replace: true });
+    }
+  }, [user?.role, navigate]);
+
+  const queryClient = useQueryClient();
+
+  const { data: tickets } = useQuery({
+    queryKey: ['tickets', 'my'],
+    queryFn: () => rpc.ticket.myTickets(),
+    enabled: !!user,
+  });
+
+  const createTicket = useMutation({
+    mutationFn: (data: any) => rpc.ticket.create(data.subject, undefined, data.category),
+    onSuccess: () => {
+      toast.success("Ticket created!");
+      setSubject("");
+      queryClient.invalidateQueries({ queryKey: ['tickets', 'my'] });
+    },
+    onError: (err: any) => toast.error(err.message || "Create failed"),
+  });
+
+  const replyTicket = useMutation({
+    mutationFn: (data: any) => rpc.ticket.reply(data.ticketId, data.replyText),
+    onSuccess: () => {
+      setReplyText("");
+      queryClient.invalidateQueries({ queryKey: ['tickets', 'my'] });
+    },
+    onError: (err: any) => toast.error(err.message || "Reply failed"),
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {

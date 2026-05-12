@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { trpc } from "@/providers/trpc";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate, Link } from "react-router";
 import { toast } from "sonner";
@@ -16,19 +17,35 @@ export default function Messages() {
   const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { data: conversations } = trpc.conversation.myConversations.useQuery(undefined, { enabled: !!user });
-  const { data: messages, refetch: refetchMessages } = trpc.conversation.getMessages.useQuery(
-    { conversationId: selectedConversation! },
-    { enabled: !!selectedConversation }
-  );
+  // Redirect admin users to admin dashboard
+  useEffect(() => {
+    if (user && user.role === "admin") {
+      navigate("/admin", { replace: true });
+    }
+  }, [user?.role, navigate]);
 
-  const sendMessage = trpc.conversation.sendMessage.useMutation({
+  const queryClient = useQueryClient();
+
+  const { data: conversations } = useQuery({
+    queryKey: ['conversations', 'my'],
+    queryFn: () => rpc.conversation.myConversations(),
+    enabled: !!user,
+  });
+
+  const { data: messages } = useQuery({
+    queryKey: ['messages', selectedConversation],
+    queryFn: () => rpc.conversation.getMessages(selectedConversation!),
+    enabled: !!selectedConversation,
+  });
+
+  const sendMessage = useMutation({
+    mutationFn: (data: any) => rpc.conversation.sendMessage(data.conversationId, data.content, data.type, data.mediaUrl, data.duration),
     onSuccess: () => {
       setMediaInput("");
       setVoiceInput("");
-      refetchMessages();
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedConversation] });
     },
-    onError: (err: { message?: string }) => {
+    onError: (err: any) => {
       toast.error(err.message || "Failed to send");
     },
   });
@@ -51,6 +68,7 @@ export default function Messages() {
       type: "media",
       content: mediaInput,
       mediaUrl: mediaInput,
+      duration: undefined,
     });
   };
 
@@ -58,7 +76,7 @@ export default function Messages() {
     if (!voiceInput.trim() || !selectedConversation) return;
     sendMessage.mutate({
       conversationId: selectedConversation,
-      type: "voice",
+      type: "media",
       content: "Voice note",
       mediaUrl: voiceInput,
       duration: 30,

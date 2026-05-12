@@ -1,24 +1,61 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { trpc } from "@/providers/trpc";
+import { useQuery } from "@tanstack/react-query";
+import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { Link, useNavigate } from "react-router";
 import {
   Users, CreditCard, Shield, MessageCircle, Ticket, DollarSign,
-  ArrowRight, Heart, LogOut, Activity, TrendingUp, UserCheck
+  ArrowRight, Heart, LogOut, Activity, TrendingUp, UserCheck, AlertCircle
 } from "lucide-react";
 
 export default function AdminDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const { data: stats } = trpc.admin.dashboardStats.useQuery(undefined, { enabled: user?.role === "admin" });
+  const { data: stats = {}, error: statsError } = useQuery({
+    queryKey: ['admin', 'dashboardStats'],
+    queryFn: () => rpc.admin.dashboardStats(),
+    enabled: user?.role === 'admin',
+  });
 
   if (!user || user.role !== "admin") return null;
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-white">
+        <div className="text-center">
+          <div className="w-12 h-12 rounded-full bg-rose-500/20 border border-rose-500/50 mx-auto mb-4 animate-spin" />
+          <p>Loading admin dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (statsError) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-white">
+        <Card className="bg-neutral-900/80 border-neutral-800 w-full max-w-md">
+          <CardContent className="p-6">
+            <div className="flex gap-3 items-start">
+              <AlertCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <h3 className="font-semibold text-red-400 mb-1">Dashboard Error</h3>
+                <p className="text-sm text-neutral-400 mb-4">{statsError.message || "Failed to load dashboard stats"}</p>
+                <Button onClick={() => window.location.reload()} variant="outline" size="sm">
+                  Retry
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const statCards = [
     { label: "Total Users", value: stats?.totalUsers || 0, icon: Users, color: "text-blue-400", bg: "bg-blue-500/10", link: "/admin/users" },
-    { label: "Active Users", value: stats?.activeUsers || 0, icon: UserCheck, color: "text-emerald-400", bg: "bg-emerald-500/10", link: "/admin/users" },
-    { label: "Revenue", value: `$${stats?.revenue?.toFixed(2) || "0.00"}`, icon: DollarSign, color: "text-amber-400", bg: "bg-amber-500/10", link: "/admin/payments" },
+    { label: "Total Agents", value: stats?.totalAgents || 0, icon: UserCheck, color: "text-emerald-400", bg: "bg-emerald-500/10", link: "/admin/agents" },
+    { label: "Total Payments", value: `$${stats?.totalPaymentsAmount?.toFixed(2) || "0.00"}`, icon: DollarSign, color: "text-amber-400", bg: "bg-amber-500/10", link: "/admin/payments" },
     { label: "Pending Payments", value: stats?.pendingPayments || 0, icon: CreditCard, color: "text-rose-400", bg: "bg-rose-500/10", link: "/admin/payments" },
     { label: "Active Conversations", value: stats?.activeConversations || 0, icon: MessageCircle, color: "text-violet-400", bg: "bg-violet-500/10", link: "/admin/conversations" },
     { label: "Open Tickets", value: stats?.openTickets || 0, icon: Ticket, color: "text-orange-400", bg: "bg-orange-500/10", link: "/admin/tickets" },

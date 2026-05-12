@@ -5,6 +5,8 @@ import Register from "./pages/Register"
 import Dashboard from "./pages/Dashboard"
 import Messages from "./pages/Messages"
 import Tickets from "./pages/Tickets"
+import Subscribe from "./pages/Subscribe"
+import PaymentConfirmation from "./pages/PaymentConfirmation"
 import AdminDashboard from "./pages/admin/AdminDashboard"
 import AdminUsers from "./pages/admin/AdminUsers"
 import AdminAgents from "./pages/admin/AdminAgents"
@@ -13,14 +15,17 @@ import AdminKyc from "./pages/admin/AdminKyc"
 import AdminConversations from "./pages/admin/AdminConversations"
 import AdminTickets from "./pages/admin/AdminTickets"
 import AdminSettings from "./pages/admin/AdminSettings"
+import AgentLoginPage from "./pages/agent/AgentLoginPage"
+import AgentDashboard from "./pages/agent/AgentDashboard"
 import NotFound from "./pages/NotFound"
 import { useAuth } from "./hooks/useAuth"
 
-function ProtectedRoute({ children, requireAdmin = false }: { children: React.ReactNode; requireAdmin?: boolean }) {
+function ProtectedRoute({ children, requireAdmin = false, requireAgent = false }: { children: React.ReactNode; requireAdmin?: boolean; requireAgent?: boolean }) {
   const { user, isLoading } = useAuth();
   if (isLoading) return <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-white">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
   if (requireAdmin && user.role !== "admin") return <Navigate to="/dashboard" replace />;
+  if (requireAgent && user.role !== "agent") return <Navigate to="/agent/login" replace />;
   return <>{children}</>;
 }
 
@@ -30,9 +35,13 @@ export default function App() {
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/subscribe" element={<ProtectedRoute><Subscribe /></ProtectedRoute>} />
+      <Route path="/payment-confirmation" element={<ProtectedRoute><PaymentConfirmation /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
       <Route path="/tickets" element={<ProtectedRoute><Tickets /></ProtectedRoute>} />
+      <Route path="/agent/login" element={<AgentLoginPage />} />
+      <Route path="/agent" element={<ProtectedRoute requireAgent><AgentDashboard /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute requireAdmin><AdminDashboard /></ProtectedRoute>} />
       <Route path="/admin/users" element={<ProtectedRoute requireAdmin><AdminUsers /></ProtectedRoute>} />
       <Route path="/admin/agents" element={<ProtectedRoute requireAdmin><AdminAgents /></ProtectedRoute>} />

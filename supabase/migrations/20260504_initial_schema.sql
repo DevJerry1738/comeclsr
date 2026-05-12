@@ -178,6 +178,9 @@ ALTER TABLE public.agent_messages ENABLE ROW LEVEL SECURITY;
 -- ============================================================================
 -- HELPER FUNCTION: Check if user is admin
 -- ============================================================================
+-- HELPER FUNCTION: Check if user is admin (DEPRECATED - DO NOT USE IN RLS)
+-- Kept for backwards compatibility only. Do NOT use in RLS policies as it causes recursion.
+-- ============================================================================
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
@@ -193,48 +196,41 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- RLS POLICIES: user_profiles
 -- ============================================================================
 
--- Users can view their own profile
-DROP POLICY IF EXISTS "Users can view own profile" ON public.user_profiles;
-CREATE POLICY "Users can view own profile"
-  ON public.user_profiles
-  FOR SELECT
-  USING (auth.uid() = id);
-
--- Admins can view all profiles
-DROP POLICY IF EXISTS "Admins can view all profiles" ON public.user_profiles;
-CREATE POLICY "Admins can view all profiles"
-  ON public.user_profiles
-  FOR SELECT
-  USING (public.is_admin());
-
--- Users can update their own profile
-DROP POLICY IF EXISTS "Users can update own profile" ON public.user_profiles;
-CREATE POLICY "Users can update own profile"
-  ON public.user_profiles
-  FOR UPDATE
-  USING (auth.uid() = id)
-  WITH CHECK (auth.uid() = id);
-
--- Users can create their own profile (for signup)
+-- Users can INSERT their own profile (for signup)
+-- NOTE: NO "TO authenticated" clause - allows JWT-based signup
 DROP POLICY IF EXISTS "Users can create their own profile" ON public.user_profiles;
 CREATE POLICY "Users can create their own profile"
   ON public.user_profiles
   FOR INSERT
   WITH CHECK (auth.uid() = id);
 
--- Admins can update any profile
-DROP POLICY IF EXISTS "Admins can update any profile" ON public.user_profiles;
-CREATE POLICY "Admins can update any profile"
+-- Users can view their own profile
+DROP POLICY IF EXISTS "Users can view own profile" ON public.user_profiles;
+CREATE POLICY "Users can view own profile"
+  ON public.user_profiles
+  FOR SELECT
+  TO authenticated
+  USING (auth.uid() = id);
+
+-- All authenticated users can view all profiles (for UI, agent selection, etc)
+DROP POLICY IF EXISTS "Admins can view all profiles" ON public.user_profiles;
+CREATE POLICY "All authenticated can view all profiles"
+  ON public.user_profiles
+  FOR SELECT
+  TO authenticated
+  USING (auth.role() = 'authenticated');
+
+-- Users can UPDATE their own profile
+DROP POLICY IF EXISTS "Users can update own profile" ON public.user_profiles;
+CREATE POLICY "Users can update own profile"
   ON public.user_profiles
   FOR UPDATE
-  USING (public.is_admin());
+  TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
--- Admins can delete users
-DROP POLICY IF EXISTS "Admins can delete users" ON public.user_profiles;
-CREATE POLICY "Admins can delete users"
-  ON public.user_profiles
-  FOR DELETE
-  USING (public.is_admin());
+-- Note: Policies that used is_admin() have been removed to prevent RLS recursion errors
+-- Admin-only operations should be handled at the application level or through separate admin tables
 
 -- ============================================================================
 -- RLS POLICIES: conversations
@@ -247,8 +243,7 @@ CREATE POLICY "Users view own conversations"
   FOR SELECT
   USING (
     auth.uid() = user_id OR
-    agent_id IN (SELECT id FROM public.agents WHERE user_id = auth.uid()) OR
-    public.is_admin()
+    agent_id IN (SELECT id FROM public.agents WHERE user_id = auth.uid())
   );
 
 -- Users can create conversations (admin assigns agent)
@@ -257,16 +252,15 @@ CREATE POLICY "Users can be assigned conversations"
   ON public.conversations
   FOR INSERT
   WITH CHECK (
-    user_id = auth.uid() OR
-    public.is_admin()
+    user_id = auth.uid()
   );
 
--- Admins can update conversations (approve/reject)
+-- Authenticated users can update conversations (for message tracking)
 DROP POLICY IF EXISTS "Admins can manage conversations" ON public.conversations;
-CREATE POLICY "Admins can manage conversations"
+CREATE POLICY "Authenticated users can update own conversations"
   ON public.conversations
   FOR UPDATE
-  USING (public.is_admin());
+  USING (auth.uid() = user_id);
 
 -- ============================================================================
 -- RLS POLICIES: messages
@@ -282,8 +276,7 @@ CREATE POLICY "Users view messages in own conversations"
       SELECT id FROM public.conversations
       WHERE user_id = auth.uid() OR
       agent_id IN (SELECT id FROM public.agents WHERE user_id = auth.uid())
-    ) OR
-    public.is_admin()
+    )
   );
 
 -- Users and agents can send messages

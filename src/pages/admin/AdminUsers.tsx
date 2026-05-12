@@ -3,7 +3,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { trpc } from "@/providers/trpc";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "react-router";
 import { toast } from "sonner";
@@ -15,15 +16,44 @@ export default function AdminUsers() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [newPassword, setNewPassword] = useState("");
   const [showDetail, setShowDetail] = useState(false);
+  const queryClient = useQueryClient();
 
-  const { data: allUsers, refetch } = trpc.admin.allUsers.useQuery(undefined, { enabled: user?.role === "admin" });
-  const updateUser = trpc.admin.updateUser.useMutation({ onSuccess: () => { toast.success("User updated"); refetch(); } });
-  const deleteUser = trpc.admin.deleteUser.useMutation({ onSuccess: () => { toast.success("User deleted"); refetch(); } });
-  const resetPassword = trpc.admin.resetPassword.useMutation({ onSuccess: () => { toast.success("Password reset"); setNewPassword(""); } });
+  const { data: allUsers } = useQuery({
+    queryKey: ['admin', 'users'],
+    queryFn: () => rpc.admin.getUsers(),
+    enabled: user?.role === 'admin',
+  });
+
+  const updateUser = useMutation({
+    mutationFn: (updates: any) => rpc.admin.updateUser(updates.id, updates),
+    onSuccess: () => {
+      toast.success("User updated");
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+    },
+    onError: (err: any) => toast.error(err.message || "Update failed"),
+  });
+
+  const deleteUser = useMutation({
+    mutationFn: (userId: string) => rpc.admin.deleteUser(userId),
+    onSuccess: () => {
+      toast.success("User deleted");
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+    },
+    onError: (err: any) => toast.error(err.message || "Delete failed"),
+  });
+
+  const resetPassword = useMutation({
+    mutationFn: (data: any) => rpc.admin.resetPassword(data.id, data.newPassword),
+    onSuccess: () => {
+      toast.success("Password reset");
+      setNewPassword("");
+    },
+    onError: (err: any) => toast.error(err.message || "Reset failed"),
+  });
 
   const filteredUsers = allUsers?.filter(u =>
-    u.username.toLowerCase().includes(search.toLowerCase()) ||
-    u.fullName?.toLowerCase().includes(search.toLowerCase()) ||
+    u.username?.toLowerCase().includes(search.toLowerCase()) ||
+    u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
     u.email?.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -78,24 +108,23 @@ export default function AdminUsers() {
                   <tr key={u.id} className="border-b border-neutral-800/50 hover:bg-white/5">
                     <td className="p-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center text-xs font-medium">{u.fullName?.charAt(0).toUpperCase()}</div>
+                        <div className="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center text-xs font-medium">{u.full_name?.charAt(0).toUpperCase()}</div>
                         <div>
-                          <p className="text-sm font-medium">{u.fullName || u.username}</p>
+                          <p className="text-sm font-medium">{u.full_name || u.username}</p>
                           <p className="text-xs text-neutral-500">{u.email}</p>
                           <p className="text-xs text-neutral-600">@{u.username}</p>
                         </div>
                       </div>
                     </td>
                     <td className="p-4"><Badge className={getStatusColor(u.status)}>{u.status}</Badge></td>
-                    <td className="p-4"><Badge className={getStatusColor(u.paymentStatus)}>{u.paymentStatus}</Badge></td>
-                    <td className="p-4"><Badge className={getStatusColor(u.kycStatus)}>{u.kycStatus}</Badge></td>
-                    <td className="p-4"><Badge className={getStatusColor(u.conversationStatus)}>{u.conversationStatus}</Badge></td>
-                    <td className="p-4"><span className="text-sm text-neutral-400">{u.assignedAgent?.displayName || "—"}</span></td>
+                    <td className="p-4"><Badge className={getStatusColor(u.payment_status)}>{u.payment_status}</Badge></td>
+                    <td className="p-4"><Badge className={getStatusColor(u.kyc_status)}>{u.kyc_status}</Badge></td>
+                    <td className="p-4"><span className="text-sm text-neutral-400">—</span></td>
                     <td className="p-4">
                       <div className="flex gap-1">
                         <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-neutral-400 hover:text-white" onClick={() => { setSelectedUser(u); setShowDetail(true); }}><Eye className="w-4 h-4" /></Button>
                         <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-neutral-400 hover:text-amber-400" onClick={() => updateUser.mutate({ id: u.id, status: u.status === "suspended" ? "active" : "suspended" })}><Ban className="w-4 h-4" /></Button>
-                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-neutral-400 hover:text-red-400" onClick={() => confirm("Delete this user?") && deleteUser.mutate({ id: u.id })}><Trash2 className="w-4 h-4" /></Button>
+                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-neutral-400 hover:text-red-400" onClick={() => confirm("Delete this user?") && deleteUser.mutate(u.id)}><Trash2 className="w-4 h-4" /></Button>
                       </div>
                     </td>
                   </tr>
@@ -113,28 +142,14 @@ export default function AdminUsers() {
           {selectedUser && (
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
-                <div><p className="text-xs text-neutral-500">Full Name</p><p className="text-sm">{selectedUser.fullName}</p></div>
+                <div><p className="text-xs text-neutral-500">Full Name</p><p className="text-sm">{selectedUser.full_name}</p></div>
                 <div><p className="text-xs text-neutral-500">Username</p><p className="text-sm">{selectedUser.username}</p></div>
                 <div><p className="text-xs text-neutral-500">Email</p><p className="text-sm">{selectedUser.email}</p></div>
-                <div><p className="text-xs text-neutral-500">Phone</p><p className="text-sm">{selectedUser.phone || "—"}</p></div>
-                <div><p className="text-xs text-neutral-500">Gender</p><p className="text-sm">{selectedUser.gender || "—"}</p></div>
-                <div><p className="text-xs text-neutral-500">Age</p><p className="text-sm">{selectedUser.age || "—"}</p></div>
-                <div><p className="text-xs text-neutral-500">Location</p><p className="text-sm">{selectedUser.location || "—"}</p></div>
-                <div><p className="text-xs text-neutral-500">Interests</p><p className="text-sm">{selectedUser.interests || "—"}</p></div>
+                <div><p className="text-xs text-neutral-500">Created</p><p className="text-sm">{new Date(selectedUser.created_at).toLocaleDateString()}</p></div>
               </div>
 
-              {selectedUser.kyc && (
-                <div className="p-4 rounded-lg bg-neutral-800/50 space-y-2">
-                  <p className="font-medium text-sm">KYC Responses</p>
-                  <p className="text-xs text-neutral-400"><span className="text-neutral-500">People Type:</span> {selectedUser.kyc.peopleType || "—"}</p>
-                  <p className="text-xs text-neutral-400"><span className="text-neutral-500">Conversation Type:</span> {selectedUser.kyc.conversationType || "—"}</p>
-                  <p className="text-xs text-neutral-400"><span className="text-neutral-500">Personality Prefs:</span> {selectedUser.kyc.personalityPrefs || "—"}</p>
-                  <p className="text-xs text-neutral-400"><span className="text-neutral-500">Expectations:</span> {selectedUser.kyc.expectations || "—"}</p>
-                </div>
-              )}
-
               <div className="flex gap-3">
-                <select className="p-2 rounded bg-neutral-800 border border-neutral-700 text-sm text-white" onChange={e => updateUser.mutate({ id: selectedUser.id, status: e.target.value as any })} defaultValue={selectedUser.status}>
+                <select className="p-2 rounded bg-neutral-800 border border-neutral-700 text-sm text-white" onChange={e => updateUser.mutate({ id: selectedUser.id, status: e.target.value })} defaultValue={selectedUser.status}>
                   <option value="active">Active</option>
                   <option value="suspended">Suspended</option>
                   <option value="blocked">Blocked</option>

@@ -3,7 +3,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { trpc } from "@/providers/trpc";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "react-router";
 import { toast } from "sonner";
@@ -12,10 +13,37 @@ import { ArrowLeft, Heart, LogOut, CheckCircle, XCircle, MessageCircle, Eye } fr
 export default function AdminConversations() {
   const { user, logout } = useAuth();
   const [viewConv, setViewConv] = useState<number | null>(null);
-  const { data: conversations, refetch } = trpc.conversation.allConversations.useQuery(undefined, { enabled: user?.role === "admin" });
-  const { data: convMessages } = trpc.conversation.getMessages.useQuery({ conversationId: viewConv! }, { enabled: !!viewConv });
-  const approve = trpc.agent.approveConversation.useMutation({ onSuccess: () => { toast.success("Approved!"); refetch(); } });
-  const stop = trpc.agent.stopConversation.useMutation({ onSuccess: () => { toast.success("Stopped!"); refetch(); } });
+  const queryClient = useQueryClient();
+
+  const { data: conversations } = useQuery({
+    queryKey: ['conversations', 'all'],
+    queryFn: () => rpc.conversation.allConversations(),
+    enabled: user?.role === 'admin',
+  });
+
+  const { data: convMessages } = useQuery({
+    queryKey: ['messages', viewConv],
+    queryFn: () => rpc.conversation.getMessages(viewConv!),
+    enabled: !!viewConv,
+  });
+
+  const approve = useMutation({
+    mutationFn: (data: any) => rpc.agent.approveConversation(data.conversationId),
+    onSuccess: () => {
+      toast.success("Approved!");
+      queryClient.invalidateQueries({ queryKey: ['conversations', 'all'] });
+    },
+    onError: (err: any) => toast.error(err.message || "Approve failed"),
+  });
+
+  const stop = useMutation({
+    mutationFn: (data: any) => rpc.agent.stopConversation(data.conversationId),
+    onSuccess: () => {
+      toast.success("Stopped!");
+      queryClient.invalidateQueries({ queryKey: ['conversations', 'all'] });
+    },
+    onError: (err: any) => toast.error(err.message || "Stop failed"),
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
