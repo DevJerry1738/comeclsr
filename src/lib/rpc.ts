@@ -1,4 +1,5 @@
-import { supabase } from './supabase';
+import { supabase as supabaseClient } from './supabase';
+const supabase = supabaseClient as any;
 
 /**
  * Helper functions to call Supabase RPC functions with proper error handling
@@ -118,18 +119,73 @@ export const rpc = {
     },
 
     createAccount: async (fullName: string, email: string): Promise<any> => {
-      const { data, error } = await supabase.rpc('agent_create_account', {
-        p_full_name: fullName,
-        p_email: email,
-      });
-      if (error) throw error;
-      return data as any;
+      try {
+        const { data, error } = await supabase.rpc('agent_create_account', {
+          p_full_name: fullName,
+          p_email: email,
+        });
+        if (error) {
+          console.error('RPC error details:', error);
+          throw new Error(error.message || 'Failed to create agent account');
+        }
+        return data as any;
+      } catch (err: any) {
+        console.error('Agent creation error:', err.message, err);
+        throw err;
+      }
     },
 
     getAssignedUsers: async (): Promise<any> => {
       const { data, error } = await supabase.rpc('agent_get_assigned_users');
       if (error) throw error;
       return data as any;
+    },
+
+    deleteAgent: async (agentId: string): Promise<any> => {
+      const { data, error } = await supabase.rpc('admin_delete_user', { p_user_id: agentId });
+      if (error) throw error;
+      return data as any;
+    },
+
+    updateAgent: async (agentId: string, updates: { full_name?: string; status?: string }): Promise<any> => {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .update({
+          ...(updates.full_name && { full_name: updates.full_name }),
+          ...(updates.status && { status: updates.status }),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', agentId)
+        .select();
+      if (error) throw error;
+      return data;
+    },
+
+    seedAuthUsers: async (): Promise<any> => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch(
+        'https://uyuecdtiupucoixnpwbz.supabase.co/functions/v1/seed-agent-auth',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || `Failed to seed agent auth users: ${response.status}`);
+      }
+
+      return await response.json();
     },
   },
 
@@ -249,7 +305,7 @@ export const rpc = {
     },
 
     getPending: async (): Promise<any> => {
-      const { data, error } = await supabase.rpc('payment_get_pending');
+      const { data, error } = await supabase.rpc('payment_get_pending', {});
       if (error) throw error;
       return data as any;
     },

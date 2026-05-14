@@ -97,18 +97,21 @@ export default function SubscribePage() {
 
   if (plansLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-neutral-950 to-neutral-900 flex items-center justify-center">
-        <div className="text-white">Loading subscription plans...</div>
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-rose-500/20 border-t-rose-500 rounded-full animate-spin"></div>
+          <div className="text-neutral-400 font-medium">Loading premium plans...</div>
+        </div>
       </div>
     );
   }
 
   if (plans.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-neutral-950 to-neutral-900 flex items-center justify-center text-white">
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-white">
         <div className="text-center">
-          <p className="text-xl mb-4">No active subscription plans available</p>
-          <Button onClick={() => navigate("/")} variant="outline">
+          <p className="text-xl mb-6 text-neutral-400">No active subscription plans available</p>
+          <Button onClick={() => navigate("/")} variant="outline" className="border-neutral-800 hover:bg-white/5">
             Return Home
           </Button>
         </div>
@@ -117,130 +120,153 @@ export default function SubscribePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-neutral-950 to-neutral-900 text-white">
+    <div className="min-h-screen bg-[#050505] text-white selection:bg-rose-500/30 overflow-x-hidden">
+      {/* Background Decoration */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-rose-500/10 blur-[120px] rounded-full animate-pulse-slow"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-pink-500/10 blur-[120px] rounded-full animate-pulse-slow"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full opacity-20 pointer-events-none">
+          <img 
+            src="/subscription_bg_abstract_1778619827696.png" 
+            alt="" 
+            className="w-full h-full object-cover mix-blend-screen grayscale opacity-30"
+          />
+        </div>
+      </div>
+
       {/* Header */}
-      <header className="border-b border-white/10 bg-neutral-900/50 backdrop-blur-xl px-4 py-3 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto flex items-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/")}
-            className="text-neutral-400 hover:text-white"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <h1 className="ml-4 text-xl font-semibold">Choose Your Plan</h1>
+      <header className="border-b border-white/5 bg-black/40 backdrop-blur-2xl px-6 py-4 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate("/")}
+              className="text-neutral-400 hover:text-white hover:bg-white/5 rounded-full"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight">Subscription</h1>
+              <p className="text-xs text-neutral-500">Elevate your experience</p>
+            </div>
+          </div>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 py-12">
+      <main className="relative max-w-7xl mx-auto px-6 py-16 md:py-24">
         {/* Title Section */}
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Subscribe to ComeClsr
+        <div className="text-center mb-20 space-y-4 animate-fade-in">
+          <Badge className="bg-rose-500/10 text-rose-400 border-rose-500/20 px-4 py-1 mb-2 hover:bg-rose-500/20 transition-colors">
+            Premium Access
+          </Badge>
+          <h2 className="text-4xl md:text-6xl font-bold tracking-tighter">
+            Choose Your <span className="gradient-text">Journey</span>
           </h2>
-          <p className="text-neutral-400 text-lg">
-            Choose the perfect plan for your needs
+          <p className="text-neutral-400 text-lg max-w-2xl mx-auto">
+            Unlock exclusive features and personalized support with our premium subscription plans.
           </p>
         </div>
 
-        {/* Plans Carousel */}
-        <div className="relative mb-12">
-          {/* Left Arrow */}
-          {canScrollLeft && (
-            <button
-              onClick={() => scroll("left")}
-              className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 z-10 p-2 rounded-full bg-rose-500/20 hover:bg-rose-500/40 text-rose-400 transition-all"
-            >
-              <ChevronLeft className="w-6 h-6" />
-            </button>
-          )}
+        {/* Plans Grid/Carousel */}
+        <div className="relative mb-20">
+          {/* Navigation Arrows (Visible only on mobile/small screens if scrolling is needed) */}
+          <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 flex justify-between pointer-events-none z-10 px-2 md:hidden">
+            {canScrollLeft && (
+              <button
+                onClick={() => scroll("left")}
+                className="pointer-events-auto p-3 rounded-full bg-black/60 border border-white/10 text-white backdrop-blur-md shadow-2xl hover:scale-110 transition-transform"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
+            {canScrollRight && (
+              <button
+                onClick={() => scroll("right")}
+                className="pointer-events-auto p-3 rounded-full bg-black/60 border border-white/10 text-white backdrop-blur-md shadow-2xl hover:scale-110 transition-transform"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+          </div>
 
-          {/* Carousel */}
           <div
             ref={carouselRef}
             onScroll={checkScroll}
-            className="flex gap-6 overflow-x-auto scroll-smooth pb-2 px-2"
-            style={{ scrollBehavior: "smooth" }}
+            className="flex md:grid md:grid-cols-3 gap-8 overflow-x-auto md:overflow-visible scrollbar-hide pb-8 px-2"
           >
             {plans.map((plan, index) => {
               const isSelected = selectedPlan === plan.id;
-              const isPopular = index === 1; // Middle plan is popular
+              const isPopular = index === 1; // Middle plan as popular
 
               return (
                 <div
                   key={plan.id}
-                  className="flex-shrink-0 w-80 animate-in fade-in slide-in-from-bottom-4"
+                  onClick={() => setSelectedPlan(plan.id)}
+                  className={`group relative flex-shrink-0 w-[320px] md:w-full cursor-pointer transition-all duration-500 ease-out animate-slide-up`}
                   style={{
-                    animationDelay: `${index * 100}ms`,
+                    animationDelay: `${index * 150}ms`,
                     animationFillMode: "both",
                   }}
                 >
+                  <div className={`absolute inset-0 rounded-[2rem] transition-opacity duration-500 ${
+                    isSelected ? "bg-rose-500/20 blur-3xl opacity-50" : "opacity-0 group-hover:opacity-20 bg-rose-500/10 blur-2xl"
+                  }`}></div>
+                  
                   <Card
-                    onClick={() => setSelectedPlan(plan.id)}
-                    className={`cursor-pointer transition-all duration-300 h-full flex flex-col relative ${
+                    className={`relative overflow-hidden h-full flex flex-col rounded-[2rem] border transition-all duration-500 glass-card ${
                       isSelected
-                        ? "border-rose-500 bg-gradient-to-b from-rose-500/10 to-neutral-900/60 shadow-lg shadow-rose-500/20 scale-105"
-                        : "border-neutral-700 bg-neutral-900/60 hover:border-rose-500/50 hover:bg-neutral-800/50"
-                    }`}
+                        ? "border-rose-500 bg-rose-500/10 shadow-2xl glow-rose scale-[1.02] translate-y-[-8px]"
+                        : "border-white/5 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
+                    } backdrop-blur-xl`}
                   >
                     {isPopular && (
-                      <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                        <Badge className="bg-gradient-to-r from-rose-500 to-pink-500 text-white">
-                          Most Popular
-                        </Badge>
+                      <div className="absolute top-0 right-0 overflow-hidden w-32 h-32 pointer-events-none">
+                        <div className="absolute top-4 right-[-35px] rotate-45 bg-gradient-to-r from-rose-500 to-pink-500 text-[10px] font-bold py-1 px-10 text-center uppercase tracking-widest shadow-lg">
+                          Popular
+                        </div>
                       </div>
                     )}
 
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-xl">{plan.name}</CardTitle>
-                    </CardHeader>
-
-                    <CardContent className="flex-1 space-y-6">
-                      {/* Price */}
-                      <div className="mb-4">
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-4xl font-bold text-rose-400">
-                            ${plan.amount.toFixed(2)}
-                          </span>
-                          <span className="text-neutral-400">
-                            /{plan.duration_days} days
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Features */}
-                      <div className="space-y-3">
-                        <div className="flex items-start gap-2">
-                          <Check className="w-5 h-5 text-rose-400 mt-0.5 flex-shrink-0" />
-                          <span className="text-neutral-300">
-                            {plan.duration_days} day access
-                          </span>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <Check className="w-5 h-5 text-rose-400 mt-0.5 flex-shrink-0" />
-                          <span className="text-neutral-300">
-                            Chat with assigned agent
-                          </span>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <Check className="w-5 h-5 text-rose-400 mt-0.5 flex-shrink-0" />
-                          <span className="text-neutral-300">
-                            Priority support
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Selection Indicator */}
-                      <div className="pt-4 mt-auto">
+                    <CardHeader className="pt-10 pb-6 px-8">
+                      <div className="flex justify-between items-start mb-2">
+                        <CardTitle className={`text-2xl font-bold tracking-tight ${isSelected ? "text-rose-400" : "text-white"}`}>
+                          {plan.name}
+                        </CardTitle>
                         {isSelected && (
-                          <div className="text-center py-2 px-3 bg-rose-500/20 border border-rose-500 rounded-lg">
-                            <span className="text-rose-300 font-semibold flex items-center justify-center gap-2">
-                              <Check className="w-4 h-4" />
-                              Selected
-                            </span>
+                          <div className="w-8 h-8 rounded-full bg-rose-500 flex items-center justify-center animate-in zoom-in duration-300">
+                            <Check className="w-5 h-5 text-white" />
                           </div>
                         )}
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className={`text-5xl font-black tracking-tighter transition-colors ${isSelected ? "text-white" : "text-neutral-200"}`}>
+                          ${plan.amount.toFixed(0)}
+                        </span>
+                        <span className="text-neutral-500 font-medium">.{(plan.amount % 1).toFixed(2).split('.')[1]}</span>
+                        <span className="text-neutral-500 ml-1 text-sm">/ {plan.duration_days} days</span>
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="flex-1 px-8 pb-10 space-y-8">
+                      <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+                      
+                      <div className="space-y-4">
+                        <FeatureItem isSelected={isSelected} text={`${plan.duration_days} Days Full Access`} />
+                        <FeatureItem isSelected={isSelected} text="Direct Agent Chat Line" />
+                        <FeatureItem isSelected={isSelected} text="Priority Ticket Handling" />
+                        <FeatureItem isSelected={isSelected} text="Advanced Content Unlocks" />
+                        <FeatureItem isSelected={isSelected} text="Zero Ad Interruptions" />
+                      </div>
+
+                      <div className="pt-4">
+                        <div className={`w-full py-4 rounded-2xl text-center font-bold tracking-wide transition-all duration-300 ${
+                          isSelected 
+                            ? "bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-lg" 
+                            : "bg-white/5 text-neutral-400 group-hover:bg-white/10 group-hover:text-white"
+                        }`}>
+                          {isSelected ? "Plan Selected" : "Select Plan"}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -248,53 +274,70 @@ export default function SubscribePage() {
               );
             })}
           </div>
+        </div>
 
-          {/* Right Arrow */}
-          {canScrollRight && (
-            <button
-              onClick={() => scroll("right")}
-              className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 z-10 p-2 rounded-full bg-rose-500/20 hover:bg-rose-500/40 text-rose-400 transition-all"
+        {/* Terms & Confirmation Section */}
+        <div className="max-w-2xl mx-auto space-y-12 animate-fade-in" style={{ animationDelay: '600ms', animationFillMode: 'both' }}>
+          <div 
+            onClick={() => setTermsAccepted(!termsAccepted)}
+            className={`group flex items-start gap-5 p-6 rounded-3xl border transition-all duration-300 cursor-pointer ${
+              termsAccepted 
+                ? "border-rose-500/50 bg-rose-500/5" 
+                : "border-white/5 bg-white/[0.02] hover:border-white/20"
+            }`}
+          >
+            <div className={`mt-1 flex-shrink-0 w-6 h-6 rounded-lg border-2 transition-all flex items-center justify-center ${
+              termsAccepted ? "bg-rose-500 border-rose-500" : "border-neutral-700 group-hover:border-neutral-500"
+            }`}>
+              {termsAccepted && <Check className="w-4 h-4 text-white" />}
+            </div>
+            <p className="text-sm leading-relaxed text-neutral-400 group-hover:text-neutral-300 transition-colors">
+              I acknowledge that upon selection, an administrator will reach out via my registered email with secure payment instructions. Full premium access is granted immediately after payment verification.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4">
+            <Button
+              variant="ghost"
+              className="flex-1 py-8 rounded-2xl text-neutral-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all font-semibold"
+              onClick={() => navigate("/")}
             >
-              <ChevronRight className="w-6 h-6" />
-            </button>
-          )}
+              Go Back
+            </Button>
+            <Button
+              className={`flex-1 py-8 rounded-2xl font-bold text-lg transition-all duration-500 ${
+                selectedPlan && termsAccepted
+                  ? "bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-2xl shadow-rose-500/20 hover:scale-[1.02] hover:brightness-110"
+                  : "bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-50"
+              }`}
+              disabled={!selectedPlan || !termsAccepted}
+              onClick={proceedToPayment}
+            >
+              Complete Order
+            </Button>
+          </div>
+          
+          <p className="text-center text-xs text-neutral-600 uppercase tracking-widest font-medium">
+            Secure Encryption & Privacy Guaranteed
+          </p>
         </div>
-
-        {/* Terms & Conditions */}
-        <Card className="bg-neutral-900/60 border-neutral-800 mb-8">
-          <CardContent className="pt-6">
-            <label className="flex items-start p-4 border border-neutral-700 rounded-lg cursor-pointer hover:border-rose-500/50 hover:bg-neutral-800/50 transition">
-              <input
-                type="checkbox"
-                checked={termsAccepted}
-                onChange={(e) => setTermsAccepted(e.target.checked)}
-                className="mr-4 mt-1"
-              />
-              <span className="text-sm text-neutral-300">
-                I agree that admin will contact me via email with payment details. I understand that subscription access will be granted after payment confirmation.
-              </span>
-            </label>
-          </CardContent>
-        </Card>
-
-        {/* Action Buttons */}
-        <div className="flex gap-4 max-w-md mx-auto">
-          <Button
-            variant="outline"
-            className="flex-1 border-neutral-700"
-            onClick={() => navigate("/")}
-          >
-            Cancel
-          </Button>
-          <Button
-            className="flex-1 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-semibold py-6"
-            disabled={!selectedPlan || !termsAccepted}
-            onClick={proceedToPayment}
-          >
-            Continue to Payment
-          </Button>
-        </div>
-      </div>
+      </main>
     </div>
   );
 }
+
+function FeatureItem({ text, isSelected }: { text: string; isSelected: boolean }) {
+  return (
+    <div className="flex items-center gap-3 group/item">
+      <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-colors ${
+        isSelected ? "bg-rose-500/20" : "bg-white/5"
+      }`}>
+        <Check className={`w-3 h-3 ${isSelected ? "text-rose-400" : "text-neutral-600"}`} />
+      </div>
+      <span className={`text-sm transition-colors ${isSelected ? "text-neutral-200" : "text-neutral-400"}`}>
+        {text}
+      </span>
+    </div>
+  );
+}
+

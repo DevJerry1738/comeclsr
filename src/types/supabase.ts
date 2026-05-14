@@ -170,12 +170,59 @@ export type Database = {
         Insert: Omit<Database['public']['Tables']['settings']['Row'], 'id' | 'updated_at'>;
         Update: Partial<Database['public']['Tables']['settings']['Insert']>;
       };
+      subscription_plans: {
+        Row: {
+          id: string;
+          amount: number;
+          duration_days: number;
+          name: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['subscription_plans']['Row'], 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Database['public']['Tables']['subscription_plans']['Insert']>;
+      };
+      user_subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          plan_id: string;
+          status: 'active' | 'pending' | 'expired' | 'cancelled';
+          starts_at: string | null;
+          expires_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['user_subscriptions']['Row'], 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Database['public']['Tables']['user_subscriptions']['Insert']>;
+      };
+      payment_requests: {
+        Row: {
+          id: string;
+          user_id: string;
+          plan_id: string;
+          payment_method: string;
+          amount: number;
+          status: 'pending' | 'confirmed' | 'failed' | 'refunded';
+          admin_notes: string | null;
+          requested_at: string;
+          confirmed_at: string | null;
+          confirmed_by_admin_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['payment_requests']['Row'], 'id' | 'created_at' | 'updated_at' | 'requested_at'>;
+        Update: Partial<Database['public']['Tables']['payment_requests']['Insert']>;
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      [key: string]: {
+        Args: Record<string, any>;
+        Returns: any;
+      };
     };
     Enums: {
       [_ in never]: never;

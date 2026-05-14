@@ -3,10 +3,12 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Heart, Sparkles, ArrowRight, Shield, Users, MessageCircle, Crown } from 'lucide-react'
 import { useNavigate } from 'react-router'
+import { useAuth } from '@/hooks/useAuth'
 
 export default function Home() {
   const [showPopup, setShowPopup] = useState(false)
   const navigate = useNavigate()
+  const { user } = useAuth()
 
   useEffect(() => {
     const hasAccepted = localStorage.getItem('comeclsr_accepted')
@@ -77,20 +79,32 @@ export default function Home() {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center animate-slide-up">
-            <Button
-              onClick={() => navigate('/register')}
-              className="bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white font-semibold px-8 py-6 text-base group"
-            >
-              Get Started
-              <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-            </Button>
-            <Button
-              onClick={() => navigate('/login')}
-              variant="outline"
-              className="border-white/20 text-white hover:bg-white/5 px-8 py-6 text-base"
-            >
-              Sign In
-            </Button>
+            {user ? (
+              <Button
+                onClick={() => navigate(user.role === 'admin' ? '/admin' : user.role === 'agent' ? '/agent' : '/dashboard')}
+                className="bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white font-semibold px-10 py-6 text-base group shadow-lg shadow-rose-500/20"
+              >
+                Go to Dashboard
+                <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+              </Button>
+            ) : (
+              <>
+                <Button
+                  onClick={() => navigate('/register')}
+                  className="bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white font-semibold px-8 py-6 text-base group"
+                >
+                  Get Started
+                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                </Button>
+                <Button
+                  onClick={() => navigate('/login')}
+                  variant="outline"
+                  className="border-white/20 text-white hover:bg-white/5 px-8 py-6 text-base"
+                >
+                  Sign In
+                </Button>
+              </>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-6 pt-12 max-w-lg mx-auto">

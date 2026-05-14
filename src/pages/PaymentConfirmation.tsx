@@ -4,10 +4,11 @@ import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/lib/supabase";
 import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { ArrowLeft, Check, AlertCircle, CheckCircle } from "lucide-react";
+import { ArrowLeft, Check, CheckCircle } from "lucide-react";
 
 interface Plan {
   id: string;
@@ -51,12 +52,14 @@ export default function PaymentConfirmationPage() {
       }
       return rpc.payment.createRequest(plan.id, selectedMethod);
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      console.log("Payment request created successfully:", data);
       setIsSubmitted(true);
-      toast.success("Payment request submitted successfully!");
-      setTimeout(() => navigate("/"), 2000);
+      toast.success("Payment request submitted successfully! Admin will contact you soon.");
+      setTimeout(() => navigate("/dashboard"), 3000);
     },
     onError: (err: any) => {
+      console.error("Payment creation error:", err);
       toast.error(err.message || "Failed to create payment request");
     },
   });
@@ -93,7 +96,7 @@ export default function PaymentConfirmationPage() {
               Your payment request has been received. Our admin team will contact you via email with payment instructions for your selected method.
             </p>
             <p className="text-sm text-neutral-400">
-              Redirecting to home page in 2 seconds...
+              Redirecting to your dashboard in 3 seconds...
             </p>
           </CardContent>
         </Card>

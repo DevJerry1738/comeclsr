@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -24,17 +23,20 @@ import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "react-router";
 import { toast } from "sonner";
-import { ArrowLeft, Heart, LogOut, CheckCircle, XCircle } from "lucide-react";
+import { ArrowLeft, Heart, LogOut, CheckCircle } from "lucide-react";
 
 interface PaymentRequest {
-  id: string;
+  request_id: string;
   user_id: string;
+  username: string;
+  full_name: string;
+  email: string;
   plan_id: string;
-  payment_method: string;
+  plan_name: string;
   amount: number;
+  payment_method: string;
   status: "pending" | "confirmed" | "rejected";
-  created_at: string;
-  user_email?: string;
+  requested_at: string;
 }
 
 interface Agent {
@@ -50,10 +52,60 @@ export default function AdminPayments() {
   const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
-  // Fetch pending payments
+  // Fetch pending payments - using direct query instead of RPC to avoid role check issues
   const { data: payments, isLoading: paymentsLoading } = useQuery({
     queryKey: ["payment", "pending"],
-    queryFn: () => rpc.payment.getPending(),
+    queryFn: async () => {
+      // Step 1: Query payment_requests directly
+      const { data: paymentRequests, error: paymentsError } = await supabase
+        .from("payment_requests")
+        .select("id, user_id, plan_id, payment_method, amount, status, requested_at")
+        .eq("status", "pending")
+        .order("requested_at", { ascending: false });
+      
+      if (paymentsError) throw paymentsError;
+      
+      if (!paymentRequests || paymentRequests.length === 0) return [];
+      
+      // Step 2: Get unique user IDs and plan IDs
+      const userIds = [...new Set((paymentRequests || []).map((p: any) => p.user_id))];
+      const planIds = [...new Set((paymentRequests || []).map((p: any) => p.plan_id))];
+      
+      // Step 3: Fetch user profiles
+      const { data: users } = await supabase
+        .from("user_profiles")
+        .select("id, email, full_name, username")
+        .in("id", userIds);
+      
+      // Step 4: Fetch subscription plans
+      const { data: plans } = await supabase
+        .from("subscription_plans")
+        .select("id, name")
+        .in("id", planIds);
+      
+      // Step 5: Create lookup maps
+      const usersMap = new Map((users || []).map((u: any) => [u.id, u]));
+      const plansMap = new Map((plans || []).map((p: any) => [p.id, p]));
+      
+      // Step 6: Combine the data
+      return (paymentRequests || []).map((item: any) => {
+        const userData = usersMap.get(item.user_id);
+        const planData = plansMap.get(item.plan_id);
+        return {
+          request_id: item.id,
+          user_id: item.user_id,
+          username: userData?.username || "",
+          full_name: userData?.full_name || "",
+          email: userData?.email || "",
+          plan_id: item.plan_id,
+          plan_name: planData?.name || "",
+          amount: item.amount,
+          payment_method: item.payment_method,
+          status: item.status,
+          requested_at: item.requested_at,
+        };
+      }) as PaymentRequest[];
+    },
     enabled: user?.role === "admin",
   });
 
@@ -84,45 +136,38 @@ export default function AdminPayments() {
       );
 
       // Get payment request details
-      const { data: paymentRequest } = await supabase
+      const { data: paymentRequest } = (await supabase
         .from("payment_requests")
         .select("*")
         .eq("id", variables.paymentRequestId)
-        .single();
+        .single()) as any;
 
       if (!paymentRequest) throw new Error("Payment request not found");
 
       // Get user info
-      const { data: userData } = await supabase
+      const { data: userData } = (await supabase
         .from("user_profiles")
         .select("*")
         .eq("id", paymentRequest.user_id)
-        .single();
+        .single()) as any;
 
-      // Get user email from auth
-      const { data: authUser } = await supabase.auth.admin.getUserById(
-        paymentRequest.user_id
-      );
-      const userEmail = authUser?.user?.email || userData?.email;
+      const userEmail = userData?.email;
 
       // Get agent info
-      const { data: agentData } = await supabase
+      const { data: agentData } = (await supabase
         .from("user_profiles")
         .select("*")
         .eq("id", variables.agentId)
-        .single();
+        .single()) as any;
 
-      const { data: authAgent } = await supabase.auth.admin.getUserById(
-        variables.agentId
-      );
-      const agentEmail = authAgent?.user?.email || agentData?.email;
+      const agentEmail = agentData?.email;
 
       // Get plan info
-      const { data: plan } = await supabase
+      const { data: plan } = (await supabase
         .from("subscription_plans")
         .select("*")
         .eq("id", paymentRequest.plan_id)
-        .single();
+        .single()) as any;
 
       // Calculate expiry date
       const expiryDate = new Date();
@@ -137,11 +182,12 @@ export default function AdminPayments() {
       if (!token) throw new Error("No active session");
 
       // Get admin email from user profile
-      const { data: adminData } = await supabase
+      const { data: adminData } = (await supabase
         .from("user_profiles")
         .select("email")
         .eq("role", "admin")
-        .single();
+        .limit(1)
+        .maybeSingle()) as any;
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
@@ -308,19 +354,19 @@ export default function AdminPayments() {
                 </thead>
                 <tbody>
                   {payments.map((p: PaymentRequest) => (
-                    <tr key={p.id} className="border-b border-neutral-800/50 hover:bg-white/5">
-                      <td className="p-4 text-sm">#{p.id.slice(0, 8)}</td>
-                      <td className="p-4 text-sm">{p.user_email || p.user_id}</td>
+                    <tr key={p.request_id} className="border-b border-neutral-800/50 hover:bg-white/5">
+                      <td className="p-4 text-sm">#{p.request_id.slice(0, 8)}</td>
+                      <td className="p-4 text-sm">{p.email || p.username}</td>
                       <td className="p-4 text-sm font-medium">${p.amount.toFixed(2)}</td>
-                      <td className="p-4 text-sm capitalize">{p.payment_method}</td>
+                      <td className="p-4 text-sm capitalize">{p.payment_method.replace('_', ' ')}</td>
                       <td className="p-4 text-sm text-neutral-500">
-                        {new Date(p.created_at).toLocaleDateString()}
+                        {new Date(p.requested_at).toLocaleDateString()}
                       </td>
                       <td className="p-4">
                         <Button
                           size="sm"
                           className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
-                          onClick={() => handleConfirmClick(p.id)}
+                          onClick={() => handleConfirmClick(p.request_id)}
                           disabled={confirmPayment.isPending}
                         >
                           <CheckCircle className="w-3 h-3 mr-1" />
