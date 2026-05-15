@@ -50,7 +50,7 @@ export default function PaymentConfirmationPage() {
       if (!plan?.id) {
         throw new Error("Invalid plan. Please go back and select a plan.");
       }
-      return rpc.payment.createRequest(plan.id, selectedMethod);
+      return rpc.payment.createRequest(plan.id, selectedMethod, plan.name, plan.amount);
     },
     onSuccess: (data: any) => {
       console.log("Payment request created successfully:", data);

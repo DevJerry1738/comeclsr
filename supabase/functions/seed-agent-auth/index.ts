@@ -64,6 +64,7 @@ serve(async (req: Request): Promise<Response> => {
       const username = `agent_${num.substring(1)}` // agent_001 -> agent_01
 
       try {
+        console.log(`[${i}/15] Creating auth user: ${email}`)
         const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
           email: email,
           password: password,
@@ -75,6 +76,7 @@ serve(async (req: Request): Promise<Response> => {
         })
 
         if (authError) {
+          console.error(`[${i}/15] Auth user creation failed for ${email}:`, authError)
           credentials.push({
             email,
             password,
@@ -83,15 +85,116 @@ serve(async (req: Request): Promise<Response> => {
             error: authError.message,
           })
         } else {
-          credentials.push({
-            email,
-            password,
-            username,
-            success: true,
-            user_id: authUser?.user?.id,
-          })
+          const userId = authUser?.user?.id
+          console.log(`[${i}/15] Auth user created successfully: ${userId}`)
+
+          // Step 0: Verify user_profiles exists (auth trigger creates it)
+          // Add retry logic to handle race condition
+          let userProfileExists = false
+          let lastProfileError = ''
+          for (let retry = 0; retry < 5; retry++) {
+            console.log(`[${i}/15] Checking user_profiles (attempt ${retry + 1}/5)`)
+            const { data: profile, error: profileError } = await supabase
+              .from('user_profiles')
+              .select('id')
+              .eq('id', userId)
+              .single()
+            
+            if (profileError) {
+              lastProfileError = profileError.message
+            }
+            
+            if (profile) {
+              console.log(`[${i}/15] User profile found on attempt ${retry + 1}`)
+              userProfileExists = true
+              break
+            }
+            
+            if (retry < 4) {
+              console.log(`[${i}/15] Waiting 100ms before retry...`)
+              await new Promise(resolve => setTimeout(resolve, 100)) // Wait 100ms
+            }
+          }
+
+          if (!userProfileExists) {
+            console.error(`[${i}/15] User profile not found after 5 retries for ${email}. Last error: ${lastProfileError}`)
+            credentials.push({
+              email,
+              password,
+              username,
+              success: false,
+              user_id: userId,
+              error: `User profile row not found after auth creation (checked 5 times). Trigger may not have fired.`,
+            })
+            continue
+          }
+
+          // Step 1: Update using ID (more reliable than email)
+          console.log(`[${i}/15] Updating user_profiles to set role=agent for ${userId}`)
+          const { error: updateError } = await supabase
+            .from('user_profiles')
+            .update({ role: 'agent', status: 'active' })
+            .eq('id', userId)
+
+          if (updateError) {
+            console.error(`[${i}/15] Failed to update role for ${email}:`, updateError)
+            credentials.push({
+              email,
+              password,
+              username,
+              success: false,
+              user_id: userId,
+              error: `Failed to update user_profiles: ${updateError.message}`,
+            })
+            continue
+          }
+          console.log(`[${i}/15] User profile updated successfully`)
+
+          // Step 2: Now safely create agents record using direct insert
+          console.log(`[${i}/15] Attempting direct agents table insert for ${username}`)
+          const { data: agentData, error: agentInsertError } = await supabase
+            .from('agents')
+            .insert([{
+              user_id: userId,
+              username: username,
+              display_name: `Agent ${num}`,
+              status: 'active',
+            }])
+            .select()
+
+          if (agentInsertError) {
+            console.error(`[${i}/15] Direct insert failed for ${email}:`, agentInsertError)
+            credentials.push({
+              email,
+              password,
+              username,
+              success: false,
+              user_id: userId,
+              error: `Direct agent insert failed: ${agentInsertError.message}${agentInsertError.details ? ` (${agentInsertError.details})` : ''}`,
+            })
+          } else if (!agentData || agentData.length === 0) {
+            console.error(`[${i}/15] Direct insert returned no data for ${email}`)
+            credentials.push({
+              email,
+              password,
+              username,
+              success: false,
+              user_id: userId,
+              error: `Agent record created but returned no data`,
+            })
+          } else {
+            console.log(`[${i}/15] ✓ Agent created successfully via direct insert`)
+            credentials.push({
+              email,
+              password,
+              username,
+              success: true,
+              user_id: userId,
+            })
+          }
         }
       } catch (error) {
+        console.error(`[${i}/15] Unexpected error for ${email}:`, error)
         credentials.push({
           email,
           password,

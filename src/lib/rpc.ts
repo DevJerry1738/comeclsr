@@ -137,8 +137,20 @@ export const rpc = {
 
     getAssignedUsers: async (): Promise<any> => {
       const { data, error } = await supabase.rpc('agent_get_assigned_users');
-      if (error) throw error;
+      if (error) {
+        console.error('RPC Error - agent_get_assigned_users:', error.message, error.details, error.code);
+        throw new Error(`Failed to load assigned users: ${error.message}`);
+      }
       return data as any;
+    },
+
+    getSelf: async (): Promise<any> => {
+      const { data, error } = await supabase.rpc('agent_get_self');
+      if (error) {
+        console.error('RPC Error - agent_get_self:', error.message, error.details, error.code);
+        throw new Error(`Failed to load agent record: ${error.message}`);
+      }
+      return data?.[0];
     },
 
     deleteAgent: async (agentId: string): Promise<any> => {
@@ -187,25 +199,43 @@ export const rpc = {
 
       return await response.json();
     },
+
+    getConversationWithUser: async (userId: string): Promise<any> => {
+      const { data, error } = await supabase.rpc('agent_get_conversation_with_user', { p_user_id: userId });
+      if (error) {
+        console.error('RPC Error - agent_get_conversation_with_user:', error.message, error.details, error.code);
+        throw new Error(`Failed to load conversation: ${error.message}`);
+      }
+      return data;
+    },
   },
 
   // Conversation functions
   conversation: {
     myConversations: async (limit = 20, offset = 0) => {
       const { data, error } = await supabase.rpc('conversation_my_conversations', { p_limit: limit, p_offset: offset });
-      if (error) throw error;
+      if (error) {
+        console.error('RPC Error - conversation_my_conversations:', error.message, error.details, error.code);
+        throw new Error(`Failed to load conversations: ${error.message}`);
+      }
       return data;
     },
 
     allConversations: async (limit = 20, offset = 0) => {
       const { data, error } = await supabase.rpc('conversation_all_conversations', { p_limit: limit, p_offset: offset });
-      if (error) throw error;
+      if (error) {
+        console.error('RPC Error - conversation_all_conversations:', error.message, error.details, error.code);
+        throw new Error(`Failed to load all conversations: ${error.message}`);
+      }
       return data;
     },
 
     getMessages: async (conversationId: number) => {
       const { data, error } = await supabase.rpc('conversation_get_messages', { p_conversation_id: conversationId });
-      if (error) throw error;
+      if (error) {
+        console.error('RPC Error - conversation_get_messages:', error.message, error.details, error.code);
+        throw new Error(`Failed to load messages: ${error.message}`);
+      }
       return data;
     },
 
@@ -217,7 +247,10 @@ export const rpc = {
         p_media_url: mediaUrl,
         p_duration: duration,
       });
-      if (error) throw error;
+      if (error) {
+        console.error('RPC Error - conversation_send_message:', error.message, error.details, error.code);
+        throw new Error(`Failed to send message: ${error.message}`);
+      }
       return data;
     },
 
@@ -295,18 +328,60 @@ export const rpc = {
       return data as any;
     },
 
-    createRequest: async (planId: string, paymentMethod: string): Promise<any> => {
+    createRequest: async (planId: string, paymentMethod: string, planName?: string, amount?: number): Promise<any> => {
+      // 1. Insert payment request into DB
       const { data, error } = await supabase.rpc('payment_create_request', {
         p_plan_id: planId,
         p_payment_method: paymentMethod,
       });
       if (error) throw error;
+
+      // 2. Fire the admin notification email (non-fatal — DB record already saved)
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        const user = sessionData.session?.user;
+
+        if (token && user) {
+          const requestId = (data as any)?.id ?? (data as any)?.request_id ?? planId;
+          const displayName =
+            user.user_metadata?.full_name ??
+            user.user_metadata?.name ??
+            user.email ??
+            'Unknown User';
+
+          await fetch(
+            'https://uyuecdtiupucoixnpwbz.supabase.co/functions/v1/send-payment-request',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                userName: displayName,
+                userEmail: user.email ?? '',
+                amount: amount ?? 0,
+                paymentMethod,
+                requestId: String(requestId),
+              }),
+            }
+          );
+        }
+      } catch (emailErr) {
+        // Log but don't throw — payment request was already created successfully
+        console.error('send-payment-request email failed (non-fatal):', emailErr);
+      }
+
       return data as any;
     },
 
     getPending: async (): Promise<any> => {
       const { data, error } = await supabase.rpc('payment_get_pending', {});
-      if (error) throw error;
+      if (error) {
+        console.error('RPC Error - payment_get_pending:', error.message, error.details, error.code);
+        throw new Error(`Failed to load pending payments: ${error.message}`);
+      }
       return data as any;
     },
 
@@ -316,19 +391,28 @@ export const rpc = {
         p_agent_id: agentId,
         p_admin_notes: adminNotes,
       });
-      if (error) throw error;
+      if (error) {
+        console.error('RPC Error - payment_confirm_and_assign:', error.message, error.details, error.code);
+        throw new Error(`Failed to confirm and assign payment: ${error.message}`);
+      }
       return data as any;
     },
 
     getAll: async (limit = 20, offset = 0) => {
       const { data, error } = await supabase.rpc('payment_get_all', { p_limit: limit, p_offset: offset });
-      if (error) throw error;
+      if (error) {
+        console.error('RPC Error - payment_get_all:', error.message, error.details, error.code);
+        throw new Error(`Failed to load all payments: ${error.message}`);
+      }
       return data;
     },
 
     updateStatus: async (paymentId: number, status: string, adminNotes?: string) => {
       const { data, error } = await supabase.rpc('payment_update_status', { p_payment_id: paymentId, p_status: status, p_admin_notes: adminNotes });
-      if (error) throw error;
+      if (error) {
+        console.error('RPC Error - payment_update_status:', error.message, error.details, error.code);
+        throw new Error(`Failed to update payment status: ${error.message}`);
+      }
       return data;
     },
   },

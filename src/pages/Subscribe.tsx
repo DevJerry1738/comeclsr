@@ -39,6 +39,19 @@ export default function SubscribePage() {
     enabled: !!user,
   });
 
+  // Check for pending payment requests
+  const { data: pendingPaymentData } = useQuery({
+    queryKey: ["payment_check_pending", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("payment_check_pending_for_user");
+      if (error) throw error;
+      return data as { pending_count: number } | null;
+    },
+    enabled: !!user,
+  });
+
+  const hasPendingPayment = !!(pendingPaymentData && (pendingPaymentData as any)?.pending_count > 0);
+
   // Auto-select first plan
   useEffect(() => {
     if (plans.length > 0 && !selectedPlan) {
@@ -278,6 +291,20 @@ export default function SubscribePage() {
 
         {/* Terms & Confirmation Section */}
         <div className="max-w-2xl mx-auto space-y-12 animate-fade-in" style={{ animationDelay: '600ms', animationFillMode: 'both' }}>
+          {hasPendingPayment && (
+            <div className="p-6 rounded-3xl border border-amber-500/50 bg-amber-500/5 flex items-start gap-4">
+              <div className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center mt-1">
+                <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+              </div>
+              <div>
+                <p className="font-semibold text-amber-400 mb-1">Pending Payment Request</p>
+                <p className="text-sm text-amber-200">
+                  You have a pending payment request awaiting admin review. Please wait for payment confirmation before submitting a new request.
+                </p>
+              </div>
+            </div>
+          )}
+          
           <div 
             onClick={() => setTermsAccepted(!termsAccepted)}
             className={`group flex items-start gap-5 p-6 rounded-3xl border transition-all duration-300 cursor-pointer ${
@@ -306,14 +333,14 @@ export default function SubscribePage() {
             </Button>
             <Button
               className={`flex-1 py-8 rounded-2xl font-bold text-lg transition-all duration-500 ${
-                selectedPlan && termsAccepted
+                selectedPlan && termsAccepted && !hasPendingPayment
                   ? "bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-2xl shadow-rose-500/20 hover:scale-[1.02] hover:brightness-110"
                   : "bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-50"
               }`}
-              disabled={!selectedPlan || !termsAccepted}
+              disabled={!selectedPlan || !termsAccepted || hasPendingPayment}
               onClick={proceedToPayment}
             >
-              Complete Order
+              {hasPendingPayment ? "Pending Payment Review" : "Complete Order"}
             </Button>
           </div>
           

@@ -53,7 +53,7 @@ export default function AdminPayments() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   // Fetch pending payments - using direct query instead of RPC to avoid role check issues
-  const { data: payments, isLoading: paymentsLoading } = useQuery({
+  const { data: payments, isLoading: paymentsLoading, error: paymentsError } = useQuery({
     queryKey: ["payment", "pending"],
     queryFn: async () => {
       // Step 1: Query payment_requests directly
@@ -63,7 +63,10 @@ export default function AdminPayments() {
         .eq("status", "pending")
         .order("requested_at", { ascending: false });
       
-      if (paymentsError) throw paymentsError;
+      if (paymentsError) {
+        console.error("Error fetching payment_requests:", paymentsError.message, paymentsError.details, paymentsError.code);
+        throw paymentsError;
+      }
       
       if (!paymentRequests || paymentRequests.length === 0) return [];
       
@@ -181,26 +184,17 @@ export default function AdminPayments() {
 
       if (!token) throw new Error("No active session");
 
-      // Get admin email from user profile
-      const { data: adminData } = (await supabase
-        .from("user_profiles")
-        .select("email")
-        .eq("role", "admin")
-        .limit(1)
-        .maybeSingle()) as any;
-
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
       // Send email 1: Payment request to admin
       try {
-        await fetch(`${supabaseUrl}/functions/v1/send-payment-request`, {
+        const res = await fetch(`${supabaseUrl}/functions/v1/send-payment-request`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            adminEmail: adminData?.email || "admin@comeclsr.com",
             userName: userData?.full_name || "User",
             userEmail: userEmail,
             amount: plan?.amount || 0,
@@ -208,13 +202,19 @@ export default function AdminPayments() {
             requestId: variables.paymentRequestId,
           }),
         });
+        if (!res.ok) {
+          const errData = await res.text();
+          console.error(`Admin email failed (${res.status}):`, errData);
+        } else {
+          console.log("Admin email sent successfully");
+        }
       } catch (emailError) {
-        console.error("Failed to send admin email:", emailError);
+        console.error("Failed to send admin email (network error):", emailError);
       }
 
       // Send email 2: Payment confirmed to user
       try {
-        await fetch(`${supabaseUrl}/functions/v1/send-payment-confirmed`, {
+        const res = await fetch(`${supabaseUrl}/functions/v1/send-payment-confirmed`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -229,13 +229,19 @@ export default function AdminPayments() {
             expiryDate: expiryDate.toLocaleDateString(),
           }),
         });
+        if (!res.ok) {
+          const errData = await res.text();
+          console.error(`User confirmation email failed (${res.status}):`, errData);
+        } else {
+          console.log("User confirmation email sent successfully");
+        }
       } catch (emailError) {
-        console.error("Failed to send user confirmation email:", emailError);
+        console.error("Failed to send user confirmation email (network error):", emailError);
       }
 
       // Send email 3: Agent assignment to agent
       try {
-        await fetch(`${supabaseUrl}/functions/v1/send-agent-assignment`, {
+        const res = await fetch(`${supabaseUrl}/functions/v1/send-agent-assignment`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -250,8 +256,14 @@ export default function AdminPayments() {
             agentDashboardUrl: `${window.location.origin}/agent/dashboard`,
           }),
         });
+        if (!res.ok) {
+          const errData = await res.text();
+          console.error(`Agent assignment email failed (${res.status}):`, errData);
+        } else {
+          console.log("Agent assignment email sent successfully");
+        }
       } catch (emailError) {
-        console.error("Failed to send agent assignment email:", emailError);
+        console.error("Failed to send agent assignment email (network error):", emailError);
       }
 
       return result;
@@ -321,6 +333,14 @@ export default function AdminPayments() {
             {paymentsLoading ? "Loading..." : `${payments?.length || 0} pending requests`}
           </p>
         </div>
+
+        {paymentsError && (
+          <Card className="bg-red-500/10 border-red-500/30 p-4 mb-6">
+            <p className="text-red-400 text-sm">
+              <strong>Error:</strong> {paymentsError instanceof Error ? paymentsError.message : String(paymentsError)}
+            </p>
+          </Card>
+        )}
 
         {paymentsLoading ? (
           <Card className="bg-neutral-900/60 border-neutral-800 p-8 text-center">

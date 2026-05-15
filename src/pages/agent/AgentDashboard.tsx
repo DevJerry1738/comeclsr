@@ -1,18 +1,21 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { Heart, LogOut, MessageSquare, Mail, Phone, Clock, AlertCircle } from "lucide-react";
+import { Heart, LogOut, MessageSquare, Mail, Phone, Clock, AlertCircle, Send, Image, Mic, Play, ArrowDown } from "lucide-react";
 
 export default function AgentDashboard() {
   const { user, logout, isAgent } = useAuth();
   const navigate = useNavigate();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [messageInput, setMessageInput] = useState("");
+  const queryClient = useQueryClient();
 
   const { data: assignedUsers = [], isLoading, error } = useQuery({
     queryKey: ["agent", "assignedUsers"],
@@ -240,17 +243,7 @@ export default function AgentDashboard() {
                         </p>
                       </div>
                     ) : (
-                      <div className="h-96 bg-neutral-800/30 rounded-lg border border-neutral-800/50 flex items-center justify-center">
-                        <div className="text-center">
-                          <MessageSquare className="w-12 h-12 text-neutral-600 mx-auto mb-2" />
-                          <p className="text-neutral-400">
-                            Chat interface coming soon
-                          </p>
-                          <p className="text-xs text-neutral-500 mt-2">
-                            Integration with conversation system in progress
-                          </p>
-                        </div>
-                      </div>
+                      <AgentChatInterface userId={selectedUserId!} />
                     )}
                   </CardContent>
                 </Card>
@@ -268,6 +261,197 @@ export default function AgentDashboard() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function AgentChatInterface({ userId }: { userId: string }) {
+  const [messageInput, setMessageInput] = useState("");
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  
+  // Get the agent's own record using safe RPC function
+  const { data: agentRecord, isLoading: agentLoading, error: agentError } = useQuery({
+    queryKey: ["agentSelf", user?.id],
+    queryFn: () => rpc.agent.getSelf(),
+    enabled: !!user?.id,
+  });
+
+  // Get the conversation with this user
+  const { data: conversations = [], isLoading: convsLoading } = useQuery({
+    queryKey: ["agentConversations", userId, agentRecord?.id],
+    queryFn: async () => {
+      if (!agentRecord?.id) return [];
+      const data = await rpc.agent.getConversationWithUser(userId);
+      return data || [];
+    },
+    enabled: !!agentRecord?.id,
+  });
+
+  const conversationId = conversations[0]?.id;
+
+  // Realtime subscription for messages
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const channel = supabase
+      .channel(`public:messages:agent_conversation_${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          console.log('[Agent] Realtime event received:', payload);
+          queryClient.invalidateQueries({ queryKey: ["agentMessages"] });
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Agent] Realtime status:', status);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversationId, queryClient]);
+
+  const { data: messages = [], isLoading: messagesLoading } = useQuery({
+    queryKey: ["agentMessages", conversationId],
+    queryFn: () => rpc.conversation.getMessages(conversationId),
+    enabled: !!conversationId,
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: (content: string) => rpc.conversation.sendMessage(conversationId, content, "media"),
+    onSuccess: () => {
+      setMessageInput("");
+      queryClient.invalidateQueries({ queryKey: ["agentMessages", conversationId] });
+      toast.success("Message sent");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to send message");
+    },
+  });
+
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!messageInput.trim()) return;
+    sendMutation.mutate(messageInput.trim());
+  };
+
+  // Show error if agent record lookup failed
+  if (agentError) {
+    return (
+      <div className="h-96 bg-neutral-800/30 rounded-lg border border-neutral-800/50 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
+          <p className="text-red-400 text-sm">Error loading agent record</p>
+          <p className="text-xs text-neutral-500 mt-2">{(agentError as any)?.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading if still fetching agent record
+  if (agentLoading || convsLoading) {
+    return (
+      <div className="h-96 bg-neutral-800/30 rounded-lg border border-neutral-800/50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-neutral-600 border-t-rose-500 rounded-full animate-spin mx-auto mb-2"></div>
+          <p className="text-neutral-400 text-sm">Loading conversation...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!conversationId) {
+    return (
+      <div className="h-96 bg-neutral-800/30 rounded-lg border border-neutral-800/50 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-2" />
+          <p className="text-neutral-400">
+            No active conversation with this user
+          </p>
+          <p className="text-xs text-neutral-500 mt-2">
+            Conversation will be created once they initiate contact
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-96">
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto mb-4 space-y-3 pr-2">
+        {messagesLoading ? (
+          <div className="space-y-2">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-10 bg-neutral-800/30 rounded animate-pulse" />
+            ))}
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-center">
+            <div>
+              <MessageSquare className="w-8 h-8 text-neutral-600 mx-auto mb-2" />
+              <p className="text-sm text-neutral-400">No messages yet</p>
+              <p className="text-xs text-neutral-500">Start the conversation</p>
+            </div>
+          </div>
+        ) : (
+          messages.map((msg: any, index: number) => (
+            <div
+              key={index}
+              className={`flex gap-2 ${msg.sender_role === "agent" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-xs px-4 py-2 rounded-lg ${
+                  msg.sender_role === "agent"
+                    ? "bg-rose-500/20 text-rose-100 border border-rose-500/30"
+                    : "bg-neutral-700/50 text-neutral-100 border border-neutral-600/50"
+                }`}
+              >
+                {msg.type === "text" && <p className="text-sm">{msg.content}</p>}
+                {msg.type === "media" && (
+                  <div>
+                    {msg.media_url && msg.media_url.startsWith("http") ? (
+                      <img src={msg.media_url} alt="media" className="max-w-xs rounded mb-2" />
+                    ) : null}
+                    {msg.content && <p className="text-sm">{msg.content}</p>}
+                  </div>
+                )}
+                {msg.type === "voice" && msg.media_url && (
+                  <div className="flex items-center gap-2">
+                    <Play className="w-4 h-4" />
+                    <audio controls src={msg.media_url} className="max-w-xs" />
+                  </div>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Message Input */}
+      <form onSubmit={handleSendMessage} className="flex gap-2">
+        <input
+          type="text"
+          value={messageInput}
+          onChange={(e) => setMessageInput(e.target.value)}
+          placeholder="Type your message..."
+          className="flex-1 bg-neutral-800/50 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-rose-500/50"
+        />
+        <Button
+          type="submit"
+          size="icon"
+          disabled={!messageInput.trim() || sendMutation.isPending}
+          className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400"
+        >
+          <Send className="w-4 h-4" />
+        </Button>
+      </form>
     </div>
   );
 }

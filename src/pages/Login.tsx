@@ -95,10 +95,26 @@ export default function Login() {
       }
 
       if (data.user) {
+        // Fetch user profile to determine redirect
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("role")
+          .eq("id", data.user.id)
+          .maybeSingle();
+
         toast.success("Welcome back!");
+        
+        // Determine redirect based on role
+        const role = (profile as any)?.role;
+        const redirectPath = role === "agent" 
+          ? "/agent" 
+          : role === "admin" 
+          ? "/admin" 
+          : "/dashboard";
+
         // Small delay to ensure session is set
         setTimeout(() => {
-          navigate("/dashboard");
+          navigate(redirectPath);
         }, 500);
       }
     } catch (error: any) {

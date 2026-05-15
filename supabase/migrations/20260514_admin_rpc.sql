@@ -31,7 +31,7 @@ BEGIN
 
   SELECT jsonb_build_object(
     'totalUsers', (SELECT COUNT(*) FROM public.user_profiles WHERE role = 'user'),
-    'totalAgents', (SELECT COUNT(*) FROM public.agents WHERE status = 'active'),
+    'totalAgents', (SELECT COUNT(*) FROM public.user_profiles WHERE role = 'agent'),
     'activeConversations', (SELECT COUNT(*) FROM public.conversations WHERE status = 'active'),
     'pendingKYC', (SELECT COUNT(*) FROM public.kyc_submissions WHERE status = 'pending'),
     'pendingPayments', (SELECT COUNT(*) FROM public.payments WHERE status = 'pending'),
