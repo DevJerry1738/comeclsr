@@ -2,7 +2,13 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -125,13 +131,14 @@ export default function AdminAgents() {
   const updateAgent = useMutation({
     mutationFn: async (data: { agentId: string; fullName: string; email: string }) => {
       try {
-        const { error } = await supabase
+        const updateData = {
+          full_name: data.fullName,
+          email: data.email,
+          updated_at: new Date().toISOString(),
+        };
+        const { error } = await (supabase as any)
           .from("user_profiles")
-          .update({
-            full_name: data.fullName,
-            email: data.email,
-            updated_at: new Date().toISOString(),
-          })
+          .update(updateData)
           .eq("id", data.agentId);
         
         if (error) {

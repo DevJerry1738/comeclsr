@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { usePendingPayment } from "@/hooks/usePendingPayment";
 import { ArrowLeft, ChevronLeft, ChevronRight, Check } from "lucide-react";
 
 interface SubscriptionPlan {
@@ -39,18 +40,8 @@ export default function SubscribePage() {
     enabled: !!user,
   });
 
-  // Check for pending payment requests
-  const { data: pendingPaymentData } = useQuery({
-    queryKey: ["payment_check_pending", user?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("payment_check_pending_for_user");
-      if (error) throw error;
-      return data as { pending_count: number } | null;
-    },
-    enabled: !!user,
-  });
-
-  const hasPendingPayment = !!(pendingPaymentData && (pendingPaymentData as any)?.pending_count > 0);
+  // Check for pending payment requests using shared hook
+  const { data: hasPendingPayment } = usePendingPayment(user?.id);
 
   // Auto-select first plan
   useEffect(() => {
@@ -119,6 +110,40 @@ export default function SubscribePage() {
     );
   }
 
+  // ── PENDING GATE: Full-screen block if user already has a pending request ──
+  if (hasPendingPayment) {
+    return (
+      <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center px-6">
+        <div className="text-center max-w-sm">
+          <div className="w-20 h-20 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-6">
+            <div className="w-6 h-6 rounded-full bg-amber-400 animate-pulse" />
+          </div>
+          <h1 className="text-2xl font-bold mb-3 text-amber-300">Request Already Submitted</h1>
+          <p className="text-neutral-400 text-sm leading-relaxed mb-2">
+            You already have a pending subscription request being reviewed by our team.
+          </p>
+          <p className="text-neutral-500 text-xs mb-8">
+            You cannot submit a new request until your current one is processed.
+          </p>
+          <Button
+            onClick={() => navigate("/dashboard?tab=subscription")}
+            className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold px-8 py-3 rounded-2xl"
+          >
+            View Request Status
+          </Button>
+          <div className="mt-4">
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="text-sm text-neutral-600 hover:text-neutral-400 transition-colors"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (plans.length === 0) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-white">
@@ -168,6 +193,15 @@ export default function SubscribePage() {
       </header>
 
       <main className="relative max-w-7xl mx-auto px-6 py-16 md:py-24">
+        {/* Pending Payment Banner */}
+        {hasPendingPayment && (
+          <div className="mb-8 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+            <p className="text-sm text-amber-300">
+              <strong>Payment Under Review</strong> — Your payment request is being reviewed by our admin team. You'll receive an email confirmation once approved.
+            </p>
+          </div>
+        )}
+
         {/* Title Section */}
         <div className="text-center mb-20 space-y-4 animate-fade-in">
           <Badge className="bg-rose-500/10 text-rose-400 border-rose-500/20 px-4 py-1 mb-2 hover:bg-rose-500/20 transition-colors">
@@ -206,7 +240,7 @@ export default function SubscribePage() {
           <div
             ref={carouselRef}
             onScroll={checkScroll}
-            className="flex md:grid md:grid-cols-3 gap-8 overflow-x-auto md:overflow-visible scrollbar-hide pb-8 px-2"
+            className="flex flex-col md:grid md:grid-cols-3 gap-8 overflow-x-visible md:overflow-visible scrollbar-hide pb-8 px-2"
           >
             {plans.map((plan, index) => {
               const isSelected = selectedPlan === plan.id;
@@ -216,7 +250,7 @@ export default function SubscribePage() {
                 <div
                   key={plan.id}
                   onClick={() => setSelectedPlan(plan.id)}
-                  className={`group relative flex-shrink-0 w-[320px] md:w-full cursor-pointer transition-all duration-500 ease-out animate-slide-up`}
+                  className={`group relative flex-shrink-0 w-full cursor-pointer transition-all duration-500 ease-out animate-slide-up`}
                   style={{
                     animationDelay: `${index * 150}ms`,
                     animationFillMode: "both",
@@ -332,7 +366,7 @@ export default function SubscribePage() {
               Go Back
             </Button>
             <Button
-              className={`flex-1 py-8 rounded-2xl font-bold text-lg transition-all duration-500 ${
+              className={`flex-1 py-8 rounded-2xl font-bold text-lg transition-all duration-500 min-h-[44px] ${
                 selectedPlan && termsAccepted && !hasPendingPayment
                   ? "bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-2xl shadow-rose-500/20 hover:scale-[1.02] hover:brightness-110"
                   : "bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-50"

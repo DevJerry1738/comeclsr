@@ -328,7 +328,7 @@ export const rpc = {
       return data as any;
     },
 
-    createRequest: async (planId: string, paymentMethod: string, planName?: string, amount?: number): Promise<any> => {
+    createRequest: async (planId: string, paymentMethod: string): Promise<any> => {
       // 1. Insert payment request into DB
       const { data, error } = await supabase.rpc('payment_create_request', {
         p_plan_id: planId,
@@ -344,6 +344,7 @@ export const rpc = {
 
         if (token && user) {
           const requestId = (data as any)?.id ?? (data as any)?.request_id ?? planId;
+          const requestAmount = (data as any)?.amount ?? 0;
           const displayName =
             user.user_metadata?.full_name ??
             user.user_metadata?.name ??
@@ -361,7 +362,7 @@ export const rpc = {
               body: JSON.stringify({
                 userName: displayName,
                 userEmail: user.email ?? '',
-                amount: amount ?? 0,
+                amount: requestAmount,
                 paymentMethod,
                 requestId: String(requestId),
               }),
@@ -419,8 +420,8 @@ export const rpc = {
 
   // KYC functions
   kyc: {
-    getAll: async (limit = 20, offset = 0) => {
-      const { data, error } = await supabase.rpc('kyc_get_all', { p_limit: limit, p_offset: offset });
+    getAll: async () => {
+      const { data, error } = await supabase.rpc('kyc_get_all');
       if (error) throw error;
       return data;
     },

@@ -4,7 +4,6 @@ import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/lib/supabase";
 import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -50,7 +49,7 @@ export default function PaymentConfirmationPage() {
       if (!plan?.id) {
         throw new Error("Invalid plan. Please go back and select a plan.");
       }
-      return rpc.payment.createRequest(plan.id, selectedMethod, plan.name, plan.amount);
+      return rpc.payment.createRequest(plan.id, selectedMethod);
     },
     onSuccess: (data: any) => {
       console.log("Payment request created successfully:", data);
@@ -121,31 +120,15 @@ export default function PaymentConfirmationPage() {
         </div>
       </header>
 
-      <div className="max-w-2xl mx-auto px-4 py-12">
+      <div className="max-w-2xl mx-auto px-4 py-12 pb-28 md:pb-12">
         {/* Progress Indicator */}
         <div className="mb-12">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex flex-col items-center">
-              <div className="w-10 h-10 rounded-full bg-rose-500 text-white flex items-center justify-center font-bold">
-                ✓
-              </div>
-              <p className="text-xs mt-2 text-neutral-400">Plan Selected</p>
-            </div>
-            <div className="flex-1 h-1 bg-rose-500/30 mx-4" />
-            <div className="flex flex-col items-center">
-              <div className="w-10 h-10 rounded-full bg-rose-500 text-white flex items-center justify-center font-bold">
-                2
-              </div>
-              <p className="text-xs mt-2 text-neutral-400">Payment Details</p>
-            </div>
-            <div className="flex-1 h-1 bg-neutral-800 mx-4" />
-            <div className="flex flex-col items-center">
-              <div className="w-10 h-10 rounded-full border border-rose-500 text-rose-400 flex items-center justify-center font-bold">
-                3
-              </div>
-              <p className="text-xs mt-2 text-neutral-400">Confirmation</p>
-            </div>
+          <div className="flex items-center justify-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-rose-500"></div>
+            <div className="w-2 h-2 rounded-full bg-rose-500"></div>
+            <div className="w-2 h-2 rounded-full border border-rose-500 bg-transparent"></div>
           </div>
+          <p className="text-center text-xs text-neutral-400 mt-3">Payment Details</p>
         </div>
 
         {/* Plan Summary */}
@@ -183,26 +166,25 @@ export default function PaymentConfirmationPage() {
           <CardHeader>
             <CardTitle>Select Payment Method</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {PAYMENT_METHODS.map((method) => (
-              <label
-                key={method.value}
-                className="flex items-center p-4 border border-neutral-700 rounded-lg cursor-pointer hover:border-rose-500/50 hover:bg-neutral-800/50 transition"
-              >
-                <input
-                  type="radio"
-                  name="payment_method"
-                  value={method.value}
-                  checked={selectedMethod === method.value}
-                  onChange={(e) => setSelectedMethod(e.target.value)}
-                  className="mr-4"
-                />
-                <span className="flex-1 font-medium">{method.label}</span>
-                {selectedMethod === method.value && (
-                  <Check className="w-5 h-5 text-rose-400" />
-                )}
-              </label>
-            ))}
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {PAYMENT_METHODS.map((method) => (
+                <button
+                  key={method.value}
+                  onClick={() => setSelectedMethod(method.value)}
+                  className={`flex items-center p-4 border rounded-xl transition text-left ${
+                    selectedMethod === method.value
+                      ? "border-rose-500 bg-rose-500/10"
+                      : "border-neutral-700 hover:border-rose-500/50 hover:bg-neutral-800/50"
+                  }`}
+                >
+                  <span className="flex-1 font-medium">{method.label}</span>
+                  {selectedMethod === method.value && (
+                    <Check className="w-5 h-5 text-rose-400" />
+                  )}
+                </button>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
@@ -233,68 +215,37 @@ export default function PaymentConfirmationPage() {
         {/* Payment Process Flow Info */}
         <Card className="bg-blue-500/10 border-blue-500/30 mb-8">
           <CardContent className="pt-6">
-            <div className="space-y-3">
-              <div className="flex gap-3">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
-                  1
-                </div>
-                <div>
-                  <p className="font-semibold text-blue-300">Submit Request</p>
-                  <p className="text-sm text-neutral-300">You submit this payment request</p>
-                </div>
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between text-center">
+              <div className="flex-1">
+                <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center mx-auto mb-2 text-sm font-bold">1</div>
+                <p className="font-semibold text-blue-300 text-sm">Submit Request</p>
               </div>
-              <div className="flex gap-3">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
-                  2
-                </div>
-                <div>
-                  <p className="font-semibold text-blue-300">Email Instructions</p>
-                  <p className="text-sm text-neutral-300">Admin sends payment details via email</p>
-                </div>
+              <div className="hidden sm:block flex-1 h-[1px] bg-blue-500/30"></div>
+              <div className="flex-1">
+                <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center mx-auto mb-2 text-sm font-bold">2</div>
+                <p className="font-semibold text-blue-300 text-sm">Admin Reviews</p>
               </div>
-              <div className="flex gap-3">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
-                  3
-                </div>
-                <div>
-                  <p className="font-semibold text-blue-300">Make Payment</p>
-                  <p className="text-sm text-neutral-300">You send payment using selected method</p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
-                  4
-                </div>
-                <div>
-                  <p className="font-semibold text-blue-300">Admin Approves</p>
-                  <p className="text-sm text-neutral-300">Admin verifies payment in dashboard</p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
-                  5
-                </div>
-                <div>
-                  <p className="font-semibold text-blue-300">Confirmation</p>
-                  <p className="text-sm text-neutral-300">You receive confirmation, access granted</p>
-                </div>
+              <div className="hidden sm:block flex-1 h-[1px] bg-blue-500/30"></div>
+              <div className="flex-1">
+                <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center mx-auto mb-2 text-sm font-bold">3</div>
+                <p className="font-semibold text-blue-300 text-sm">Access Granted</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Action Buttons */}
-        <div className="flex gap-4">
+        <div className="fixed bottom-20 md:bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-neutral-950/95 to-neutral-950/50 backdrop-blur-xl border-t border-white/10 flex gap-4 max-w-2xl mx-auto">
           <Button
             variant="outline"
-            className="flex-1 border-neutral-700"
+            className="flex-1 border-neutral-700 text-white hover:bg-neutral-800 min-h-[44px] py-3"
             onClick={() => navigate("/subscribe")}
             disabled={createPaymentMutation.isPending}
           >
             Back
           </Button>
           <Button
-            className="flex-1 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-semibold"
+            className="flex-1 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-semibold min-h-[44px] py-3 rounded-lg"
             disabled={!selectedMethod || !termsAccepted || createPaymentMutation.isPending}
             onClick={() => createPaymentMutation.mutate()}
           >

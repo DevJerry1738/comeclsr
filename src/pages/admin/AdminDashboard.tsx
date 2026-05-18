@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Link, useNavigate } from "react-router";
 import {
   Users, CreditCard, Shield, MessageCircle, Ticket, DollarSign,
-  ArrowRight, Heart, LogOut, Activity, TrendingUp, UserCheck, AlertCircle
+  ArrowRight, Heart, LogOut, Activity, TrendingUp, UserCheck, AlertCircle, Bell
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -68,6 +68,7 @@ export default function AdminDashboard() {
     { label: "KYC", desc: "Verify user identities", icon: Shield, link: "/admin/kyc", color: "text-emerald-400" },
     { label: "Conversations", desc: "Monitor all chats", icon: MessageCircle, link: "/admin/conversations", color: "text-amber-400" },
     { label: "Tickets", desc: "Support management", icon: Ticket, link: "/admin/tickets", color: "text-orange-400" },
+    { label: "Broadcasts", desc: "Send notifications", icon: Bell, link: "/admin/notifications", color: "text-rose-400" },
     { label: "Settings", desc: "System configuration", icon: Activity, link: "/admin/settings", color: "text-neutral-400" },
   ];
 
@@ -82,9 +83,6 @@ export default function AdminDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Link to="/dashboard">
-            <Button variant="ghost" size="sm" className="text-neutral-400 hover:text-white">User View</Button>
-          </Link>
           <Button variant="ghost" size="icon" onClick={logout} className="text-neutral-400 hover:text-red-400 hover:bg-red-500/10"><LogOut className="w-5 h-5" /></Button>
         </div>
       </header>
@@ -130,25 +128,6 @@ export default function AdminDashboard() {
           ))}
         </div>
 
-        {/* Revenue Chart Placeholder */}
-        <Card className="bg-neutral-900/60 border-neutral-800 mt-8">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-emerald-400" />
-              Revenue Overview
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-8">
-            <div className="flex items-end gap-4 h-48">
-              {[40, 65, 45, 80, 55, 90, 70, 85, 60, 95, 75, 88].map((h, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                  <div className="w-full bg-gradient-to-t from-rose-500/30 to-rose-500/60 rounded-t-sm" style={{ height: `${h}%` }} />
-                  <span className="text-[10px] text-neutral-500">{["J","F","M","A","M","J","J","A","S","O","N","D"][i]}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

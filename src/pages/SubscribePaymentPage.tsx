@@ -3,7 +3,6 @@ import { useNavigate } from "react-router";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";

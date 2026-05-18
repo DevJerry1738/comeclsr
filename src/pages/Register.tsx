@@ -1,6 +1,5 @@
-// Register.tsx - Updated version with validation, error messages, and email confirmation screen
+// Register.tsx - Full-screen multi-step form with new design system
 import { useState, useRef } from "react";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -271,74 +270,66 @@ export default function Register() {
   // Confirmation screen (shown after successful signup)
   if (signupSuccess) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          <Card className="bg-neutral-900/80 border-neutral-800 backdrop-blur-xl shadow-2xl">
-            <CardHeader className="bg-gradient-to-r from-rose-900/20 to-pink-900/20 border-b border-neutral-800 p-6 text-center">
-              <div className="flex justify-center mb-4">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center">
-                  <Mail className="w-8 h-8 text-white" />
-                </div>
-              </div>
-              <h1 className="text-2xl font-bold text-white mb-2">Check Your Email</h1>
-              <p className="text-neutral-400 text-sm">We've sent a confirmation link to verify your account</p>
-            </CardHeader>
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4 py-6 relative overflow-hidden">
+        {/* Ambient rose glow */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(225,29,72,0.15),_transparent_70%)] pointer-events-none" />
+        
+        <div className="relative z-10 w-full max-w-md space-y-6">
+          {/* Header */}
+          <div className="text-center space-y-3 mb-8">
+            <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+              <Mail className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-3xl font-light text-white">Check Your Email</h1>
+            <p className="text-sm text-neutral-400">We've sent a confirmation link to verify your account</p>
+          </div>
 
-            <CardContent className="p-8">
-              <div className="space-y-6">
-                <div className="bg-neutral-800/50 border border-neutral-700 rounded-lg p-4 space-y-3">
-                  <p className="text-sm text-neutral-300">
-                    <span className="font-semibold">Email sent to:</span>
-                  </p>
-                  <p className="text-neutral-400 break-all font-mono text-sm bg-neutral-900/50 p-2 rounded">
-                    {signupEmail}
-                  </p>
-                </div>
+          {/* Email Display */}
+          <div className="bg-surface-2 border border-surface-3 rounded-xl p-4 space-y-2">
+            <p className="text-xs uppercase tracking-wider text-neutral-400">Email sent to:</p>
+            <p className="text-neutral-200 break-all font-mono text-sm bg-neutral-950/50 p-3 rounded-lg">
+              {signupEmail}
+            </p>
+          </div>
 
-                <div className="space-y-3 text-sm text-neutral-400">
-                  <h3 className="font-semibold text-neutral-300">What's next?</h3>
-                  <ul className="space-y-2">
-                    <li className="flex gap-2">
-                      <span className="text-rose-500 font-bold">1.</span>
-                      <span>Open your email inbox and find the confirmation email from ComeClsr</span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="text-rose-500 font-bold">2.</span>
-                      <span>Click the confirmation link to verify your email address</span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="text-rose-500 font-bold">3.</span>
-                      <span>Return to ComeClsr and sign in with your email and password</span>
-                    </li>
-                  </ul>
-                </div>
+          {/* Steps */}
+          <div className="space-y-3 text-sm text-neutral-400">
+            <h3 className="font-semibold text-neutral-300 uppercase tracking-wider text-xs">What's next?</h3>
+            <ul className="space-y-2">
+              <li className="flex gap-3">
+                <span className="text-emerald-500 font-bold shrink-0">1.</span>
+                <span>Open your email inbox and find the confirmation email from ComeClsr</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-emerald-500 font-bold shrink-0">2.</span>
+                <span>Click the confirmation link to verify your email address</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-emerald-500 font-bold shrink-0">3.</span>
+                <span>Return to ComeClsr and sign in with your email and password</span>
+              </li>
+            </ul>
+          </div>
 
-                <div className="bg-neutral-800/30 border border-neutral-700/50 rounded-lg p-3">
-                  <p className="text-xs text-neutral-400">
-                    <span className="font-semibold text-neutral-300">💡 Tip:</span> If you don't see the email, check your spam folder or wait a few moments and refresh.
-                  </p>
-                </div>
+          {/* Buttons */}
+          <div className="space-y-3 pt-2">
+            <Button
+              onClick={() => navigate("/login")}
+              className="w-full bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white font-semibold py-3.5 rounded-xl min-h-[44px] transition flex items-center justify-center gap-2"
+            >
+              Continue to Login
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+            <Button
+              onClick={() => navigate("/")}
+              className="w-full bg-neutral-800 hover:bg-neutral-700 text-white font-semibold py-3.5 rounded-xl min-h-[44px] transition"
+            >
+              Back to Home
+            </Button>
+          </div>
 
-                <Button
-                  onClick={() => navigate("/login")}
-                  className="w-full bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white font-semibold transition flex items-center justify-center gap-2"
-                >
-                  Continue to Login
-                  <ArrowRight className="w-4 h-4" />
-                </Button>
-
-                <Button
-                  onClick={() => navigate("/")}
-                  variant="outline"
-                  className="w-full border-neutral-700 text-neutral-300 hover:text-white hover:bg-neutral-800"
-                >
-                  Back to Home
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <p className="text-center text-neutral-500 text-xs mt-6">
+          {/* Footer Link */}
+          <p className="text-center text-neutral-500 text-xs">
             Already confirmed your email?{" "}
             <Link to="/login" className="text-rose-400 hover:text-rose-300 font-semibold">
               Sign In Here
@@ -351,8 +342,12 @@ export default function Register() {
 
   // Original registration form
   return (
-    <div className="min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
+    <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4 py-6 relative overflow-hidden">
+      {/* Ambient rose glow */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(225,29,72,0.15),_transparent_70%)] pointer-events-none" />
+      <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-rose-500/20 rounded-full blur-3xl opacity-20 pointer-events-none" />
+
+      <div className="relative z-10 w-full max-w-2xl">
         <button
           onClick={() => navigate("/")}
           className="flex items-center gap-2 text-neutral-400 hover:text-white mb-8 transition"
@@ -361,14 +356,16 @@ export default function Register() {
           Back
         </button>
 
-        <Card className="bg-neutral-900/80 border-neutral-800 backdrop-blur-xl shadow-2xl">
-          <CardHeader className="bg-gradient-to-r from-rose-900/20 to-pink-900/20 border-b border-neutral-800 p-6">
+        <div className="bg-neutral-900/40 backdrop-blur-xl border border-neutral-800 rounded-2xl shadow-2xl">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-rose-900/20 to-pink-900/20 border-b border-neutral-800 p-8">
             <div className="space-y-4">
               <div>
-                <h1 className="text-3xl font-bold text-white mb-2">Create Account</h1>
-                <p className="text-neutral-400">Step {currentStep} of 3 - Join ComeClsr today</p>
+                <h1 className="text-3xl font-light text-white mb-2">Create Account</h1>
+                <p className="text-neutral-400 text-sm">Step {currentStep} of 3 - Join ComeClsr today</p>
               </div>
 
+              {/* Progress Bar */}
               <div className="flex gap-2">
                 {[1, 2, 3].map((step) => (
                   <div
@@ -382,9 +379,10 @@ export default function Register() {
                 ))}
               </div>
             </div>
-          </CardHeader>
+          </div>
 
-          <CardContent className="p-8">
+          {/* Form */}
+          <div className="p-8">
             <form onSubmit={handleSubmit} className="space-y-6">
               {currentStep === 1 && (
                 <div className="space-y-6 animate-fade-in">
@@ -401,7 +399,7 @@ export default function Register() {
                       value={formData.fullName}
                       onChange={handleChange}
                       disabled={isLoading}
-                      className={`bg-neutral-800/50 border-neutral-700 text-white placeholder:text-neutral-500 focus:border-rose-500 transition ${
+                      className={`bg-neutral-800/50 border-neutral-700 text-white placeholder:text-neutral-500 focus:border-rose-500/50 focus:outline-none rounded-xl px-4 py-3.5 transition min-h-[44px] ${
                         fieldErrors.fullName ? "border-red-500/50" : ""
                       }`}
                     />
@@ -728,8 +726,8 @@ export default function Register() {
                 </Link>
               </p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         <p className="text-center text-neutral-500 text-xs mt-8">
           By signing up, you agree to our Terms of Service and Privacy Policy

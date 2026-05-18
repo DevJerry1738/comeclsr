@@ -51,7 +51,7 @@ export default function AdminUsers() {
     onError: (err: any) => toast.error(err.message || "Reset failed"),
   });
 
-  const filteredUsers = allUsers?.filter(u =>
+  const filteredUsers = allUsers?.filter((u: any) =>
     u.username?.toLowerCase().includes(search.toLowerCase()) ||
     u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
     u.email?.toLowerCase().includes(search.toLowerCase())
@@ -104,7 +104,7 @@ export default function AdminUsers() {
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers?.map((u) => (
+                {filteredUsers?.map((u: any) => (
                   <tr key={u.id} className="border-b border-neutral-800/50 hover:bg-white/5">
                     <td className="p-4">
                       <div className="flex items-center gap-3">

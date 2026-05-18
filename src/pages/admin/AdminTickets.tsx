@@ -2,19 +2,46 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "react-router";
+import { toast } from "sonner";
 import { ArrowLeft, Heart, LogOut, Send, Ticket, CheckCircle } from "lucide-react";
 
 export default function AdminTickets() {
   const { user, logout } = useAuth();
   const [replyText, setReplyText] = useState("");
   const [activeTicket, setActiveTicket] = useState<number | null>(null);
-  const { data: tickets, refetch } = trpc.ticket.allTickets.useQuery(undefined, { enabled: user?.role === "admin" });
-  const reply = trpc.ticket.reply.useMutation({ onSuccess: () => { setReplyText(""); refetch(); } });
-  const updateStatus = trpc.ticket.updateStatus.useMutation({ onSuccess: () => { refetch(); } });
+
+  const { data: tickets = [], refetch } = useQuery({
+    queryKey: ['tickets', 'all'],
+    queryFn: () => rpc.ticket.allTickets?.() || Promise.resolve([]),
+    enabled: user?.role === 'admin',
+  });
+
+  const reply = useMutation({
+    mutationFn: async (data: { ticketId: number; message: string }) => {
+      return await rpc.ticket.reply?.(data.ticketId, data.message) || Promise.resolve(null);
+    },
+    onSuccess: () => {
+      setReplyText("");
+      refetch();
+      toast.success("Reply sent");
+    },
+    onError: () => toast.error("Failed to send reply"),
+  });
+
+  const updateStatus = useMutation({
+    mutationFn: async (data: { ticketId: number; status: string }) => {
+      return await rpc.ticket.updateStatus?.(data.ticketId, data.status) || Promise.resolve(null);
+    },
+    onSuccess: () => {
+      refetch();
+      toast.success("Status updated");
+    },
+    onError: () => toast.error("Failed to update status"),
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -43,7 +70,7 @@ export default function AdminTickets() {
         <div className="mb-6"><h2 className="text-xl font-bold">All Tickets</h2><p className="text-sm text-neutral-500">{tickets?.length || 0} total</p></div>
 
         <div className="grid md:grid-cols-2 gap-4">
-          {tickets?.map((t) => (
+          {tickets?.map((t: any) => (
             <Card key={t.id} className={`bg-neutral-900/60 border-neutral-800 cursor-pointer transition-all ${activeTicket === t.id ? "ring-1 ring-rose-500/30" : ""}`} onClick={() => setActiveTicket(activeTicket === t.id ? null : t.id)}>
               <CardContent className="p-6 space-y-4">
                 <div className="flex items-center justify-between">
@@ -58,25 +85,71 @@ export default function AdminTickets() {
                   <span className="text-white">{t.user?.fullName || `User #${t.userId}`}</span>
                 </div>
                 {activeTicket === t.id && (
-                  <div className="space-y-4 border-t border-neutral-800 pt-4">
+                  <div
+                    className="space-y-4 border-t border-neutral-800 pt-4"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {t.replies && t.replies.length > 0 && (
                       <div className="space-y-3 max-h-64 overflow-y-auto">
-                        {t.replies.map((r, i) => (
+                        {t.replies.map((r: any, i: number) => (
                           <div key={i} className={`p-3 rounded-lg text-sm ${r.senderRole === "admin" ? "bg-rose-500/10 border border-rose-500/20" : "bg-neutral-800/50"}`}>
-                            <p className="text-xs text-rose-400 mb-1">{r.senderRole}</p>
+                            <p className="text-xs text-rose-400 mb-1">{r.senderRole === 'admin' ? 'Support' : 'User'}</p>
                             <p className="text-white">{r.message}</p>
                             <p className="text-[10px] text-neutral-500 mt-1">{new Date(r.createdAt).toLocaleString()}</p>
                           </div>
                         ))}
                       </div>
                     )}
+                    {t.replies?.length === 0 && (
+                      <p className="text-xs text-neutral-500 italic">No replies yet.</p>
+                    )}
                     <div className="flex gap-2">
-                      <input className="flex-1 p-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm" placeholder="Reply..." value={replyText} onChange={e => setReplyText(e.target.value)} onKeyDown={e => e.key === "Enter" && replyText && reply.mutate({ ticketId: t.id, message: replyText })} />
-                      <Button size="sm" onClick={() => replyText && reply.mutate({ ticketId: t.id, message: replyText })} className="bg-gradient-to-r from-rose-500 to-pink-600"><Send className="w-4 h-4" /></Button>
+                      <input
+                        className="flex-1 p-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm placeholder-neutral-500 focus:outline-none focus:border-rose-500/50"
+                        placeholder="Write a reply or note..."
+                        value={replyText}
+                        onChange={e => setReplyText(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && replyText && reply.mutate({ ticketId: t.id, message: replyText })}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <Button
+                        size="sm"
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); replyText && reply.mutate({ ticketId: t.id, message: replyText }); }}
+                        disabled={!replyText.trim() || reply.isPending}
+                        className="bg-gradient-to-r from-rose-500 to-pink-600"
+                      >
+                        <Send className="w-4 h-4" />
+                      </Button>
                     </div>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline" className="border-emerald-700 text-emerald-400" onClick={() => updateStatus.mutate({ id: t.id, status: "resolved" })}><CheckCircle className="w-3 h-3 mr-1" />Resolve</Button>
-                      <Button size="sm" variant="outline" className="border-neutral-700 text-neutral-400" onClick={() => updateStatus.mutate({ id: t.id, status: "closed" })}>Close</Button>
+                      <Button
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                        className="border-emerald-700 text-emerald-400 hover:bg-emerald-500/10"
+                        onClick={(e) => { e.stopPropagation(); updateStatus.mutate({ ticketId: t.id, status: "resolved" }); }}
+                      >
+                        <CheckCircle className="w-3 h-3 mr-1" />Resolve
+                      </Button>
+                      <Button
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                        className="border-blue-700 text-blue-400 hover:bg-blue-500/10"
+                        onClick={(e) => { e.stopPropagation(); updateStatus.mutate({ ticketId: t.id, status: "in_progress" }); }}
+                      >
+                        In Progress
+                      </Button>
+                      <Button
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                        className="border-neutral-700 text-neutral-400 hover:bg-neutral-700/30"
+                        onClick={(e) => { e.stopPropagation(); updateStatus.mutate({ ticketId: t.id, status: "closed" }); }}
+                      >
+                        Close
+                      </Button>
                     </div>
                   </div>
                 )}

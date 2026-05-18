@@ -46,11 +46,12 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
     );
   }
 
+  // Only use supabaseClient, remove the session prop
   return (
-    <SessionContextProvider session={session} supabaseClient={supabase}>
-      <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}>
+      <SessionContextProvider supabaseClient={supabase}>
         {children}
-      </QueryClientProvider>
-    </SessionContextProvider>
+      </SessionContextProvider>
+    </QueryClientProvider>
   );
 }

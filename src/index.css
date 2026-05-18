@@ -1,9 +1,20 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
+    /* Surface layers for depth hierarchy */
+    --surface-0: #060608;
+    --surface-1: #0e0e12;
+    --surface-2: #16161c;
+    --surface-3: #1e1e26;
+    --bottom-nav-h: 64px;
+    --font-sans: 'Inter', system-ui, sans-serif;
+
+    /* Existing design tokens */
     --background: 0 0% 4%;
     --foreground: 0 0% 98%;
     --card: 0 0% 6%;
@@ -41,7 +52,7 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: var(--font-sans);
   }
 }
 
