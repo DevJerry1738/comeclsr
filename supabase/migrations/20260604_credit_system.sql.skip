@@ -1,0 +1,214 @@
+-- 20260604_credit_system.sql
+-- Credit-based chat system: Replace subscriptions with credits, add admin settings
+
+-- ============================================================================
+-- PART 1: Create new tables
+-- ============================================================================
+
+-- Credit packages: Different credit amounts at different price points
+CREATE TABLE credit_packages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  credit_amount INTEGER NOT NULL CHECK (credit_amount > 0),
+  price NUMERIC(10,2) NOT NULL CHECK (price > 0),
+  name TEXT NOT NULL DEFAULT 'Credit Package',
+  description TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now()
+);
+
+-- User credit balances
+CREATE TABLE user_credits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 CHECK (balance >= 0),
+  total_purchased DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now()
+);
+
+-- Credit transaction audit trail
+CREATE TABLE credit_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('deposit', 'message_deduction', 'admin_adjustment', 'refund', 'migration')),
+  amount DECIMAL(10,2) NOT NULL,
+  reason TEXT,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+-- Admin settings: Global message cost rate and minimum deposit
+CREATE TABLE admin_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_cost_rate DECIMAL(10,2) NOT NULL DEFAULT 5.00 CHECK (message_cost_rate > 0),
+  minimum_deposit_amount DECIMAL(10,2) NOT NULL DEFAULT 29.99 CHECK (minimum_deposit_amount > 0),
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now()
+);
+
+-- Agent profiles: Display info for agents (name, photo)
+CREATE TABLE agent_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_id BIGINT NOT NULL UNIQUE REFERENCES public.agents(id) ON DELETE CASCADE,
+  display_name VARCHAR(255) NOT NULL,
+  profile_photo TEXT,
+  bio TEXT,
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now()
+);
+
+-- ============================================================================
+-- PART 2: Create indexes for performance
+-- ============================================================================
+
+CREATE INDEX idx_user_credits_user_id ON user_credits(user_id);
+CREATE INDEX idx_credit_transactions_user_id ON credit_transactions(user_id);
+CREATE INDEX idx_credit_transactions_type ON credit_transactions(type);
+CREATE INDEX idx_credit_packages_is_active ON credit_packages(is_active);
+CREATE INDEX idx_agent_profiles_agent_id ON agent_profiles(agent_id);
+
+-- ============================================================================
+-- PART 3: Modify existing tables for credit system
+-- ============================================================================
+
+-- Add credits_to_grant to payment_requests (tracks how many credits user will get)
+ALTER TABLE public.payment_requests 
+ADD COLUMN credits_to_grant INTEGER;
+
+-- Make agent_id nullable in conversations (multi-agent model)
+-- First, check if column exists and drop default if it has one
+ALTER TABLE public.conversations 
+ALTER COLUMN agent_id DROP NOT NULL;
+
+-- ============================================================================
+-- PART 4: Enable RLS on new tables
+-- ============================================================================
+
+-- RLS: credit_packages (public read, admin write)
+ALTER TABLE public.credit_packages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Everyone can view active credit packages" ON public.credit_packages
+  FOR SELECT
+  USING (is_active = TRUE);
+
+CREATE POLICY "Admins can manage credit packages" ON public.credit_packages
+  FOR ALL
+  USING (EXISTS (
+    SELECT 1 FROM public.user_profiles 
+    WHERE user_profiles.id = auth.uid() AND user_profiles.role = 'admin'
+  ))
+  WITH CHECK (EXISTS (
+    SELECT 1 FROM public.user_profiles 
+    WHERE user_profiles.id = auth.uid() AND user_profiles.role = 'admin'
+  ));
+
+CREATE POLICY "Service role can manage credit packages" ON public.credit_packages
+  FOR ALL
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
+-- RLS: user_credits (users view own, admins view all, service role can update)
+ALTER TABLE public.user_credits ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own credits" ON public.user_credits
+  FOR SELECT
+  USING (user_id = auth.uid() OR EXISTS (
+    SELECT 1 FROM public.user_profiles 
+    WHERE user_profiles.id = auth.uid() AND user_profiles.role = 'admin'
+  ));
+
+CREATE POLICY "Admins can view all credits" ON public.user_credits
+  FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM public.user_profiles 
+    WHERE user_profiles.id = auth.uid() AND user_profiles.role = 'admin'
+  ));
+
+CREATE POLICY "Service role can manage user credits" ON public.user_credits
+  FOR ALL
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
+-- RLS: credit_transactions (users view own, admins view all, service role insert)
+ALTER TABLE public.credit_transactions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own transactions" ON public.credit_transactions
+  FOR SELECT
+  USING (user_id = auth.uid() OR EXISTS (
+    SELECT 1 FROM public.user_profiles 
+    WHERE user_profiles.id = auth.uid() AND user_profiles.role = 'admin'
+  ));
+
+CREATE POLICY "Admins can view all transactions" ON public.credit_transactions
+  FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM public.user_profiles 
+    WHERE user_profiles.id = auth.uid() AND user_profiles.role = 'admin'
+  ));
+
+CREATE POLICY "Service role can log transactions" ON public.credit_transactions
+  FOR INSERT
+  WITH CHECK (auth.role() = 'service_role');
+
+-- RLS: admin_settings (public read, admin write)
+ALTER TABLE public.admin_settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Everyone can view admin settings" ON public.admin_settings
+  FOR SELECT
+  USING (TRUE);
+
+CREATE POLICY "Only admins can update settings" ON public.admin_settings
+  FOR UPDATE
+  USING (EXISTS (
+    SELECT 1 FROM public.user_profiles 
+    WHERE user_profiles.id = auth.uid() AND user_profiles.role = 'admin'
+  ))
+  WITH CHECK (EXISTS (
+    SELECT 1 FROM public.user_profiles 
+    WHERE user_profiles.id = auth.uid() AND user_profiles.role = 'admin'
+  ));
+
+CREATE POLICY "Service role can manage settings" ON public.admin_settings
+  FOR ALL
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
+-- RLS: agent_profiles (public read, admin/service role write)
+ALTER TABLE public.agent_profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Everyone can view agent profiles" ON public.agent_profiles
+  FOR SELECT
+  USING (TRUE);
+
+CREATE POLICY "Admins can manage agent profiles" ON public.agent_profiles
+  FOR ALL
+  USING (EXISTS (
+    SELECT 1 FROM public.user_profiles 
+    WHERE user_profiles.id = auth.uid() AND user_profiles.role = 'admin'
+  ))
+  WITH CHECK (EXISTS (
+    SELECT 1 FROM public.user_profiles 
+    WHERE user_profiles.id = auth.uid() AND user_profiles.role = 'admin'
+  ));
+
+CREATE POLICY "Service role can manage agent profiles" ON public.agent_profiles
+  FOR ALL
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
+-- ============================================================================
+-- PART 5: Seed default data
+-- ============================================================================
+
+-- Insert default credit packages
+INSERT INTO public.credit_packages (credit_amount, price, name, description, is_active)
+VALUES
+  (10, 29.99, 'Starter Pack', '10 credits - Perfect for trying it out (~2 messages)', TRUE),
+  (50, 99.99, 'Popular Pack', '50 credits - Great value (~10 messages)', TRUE),
+  (200, 399.99, 'Pro Pack', '200 credits - Best savings (~40 messages)', TRUE)
+ON CONFLICT DO NOTHING;
+
+-- Insert default admin settings (if not exists)
+INSERT INTO public.admin_settings (message_cost_rate, minimum_deposit_amount)
+SELECT 5.00, 29.99
+WHERE NOT EXISTS (SELECT 1 FROM public.admin_settings);

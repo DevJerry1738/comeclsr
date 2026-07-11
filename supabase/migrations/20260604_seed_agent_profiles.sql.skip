@@ -1,0 +1,15 @@
+-- 20260604_seed_agent_profiles.sql
+-- Seed agent_profiles table from existing agents and user_profiles
+
+INSERT INTO public.agent_profiles (agent_id, display_name, profile_photo, bio)
+SELECT 
+  a.id,
+  COALESCE(up.full_name, a.username) as display_name,
+  up.profile_photo,
+  up.bio
+FROM public.agents a
+LEFT JOIN public.user_profiles up ON a.user_id = up.id
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.agent_profiles ap WHERE ap.agent_id = a.id
+)
+ON CONFLICT (agent_id) DO NOTHING;

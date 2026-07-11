@@ -3,10 +3,11 @@ import { useNavigate } from "react-router";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { ArrowLeft, Check, AlertCircle } from "lucide-react";
+import { ArrowLeft, Check, AlertCircle, Wallet } from "lucide-react";
 
 const PAYMENT_METHODS = [
   { value: "bank_transfer", label: "Bank Transfer" },
@@ -20,51 +21,51 @@ const PAYMENT_METHODS = [
   { value: "other", label: "Other" },
 ];
 
-export default function SubscribePaymentPage() {
+export default function DepositPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [depositAmount, setDepositAmount] = useState<string>("");
   const [selectedMethod, setSelectedMethod] = useState<string>("");
   const [termsAccepted, setTermsAccepted] = useState(false);
 
-  const { data: currentPlan = {}, isLoading: planLoading } = useQuery({
-    queryKey: ["payment", "currentPlan"],
-    queryFn: () => rpc.payment.getCurrentPlan(),
+  // Fetch admin settings for minimum deposit
+  const { data: adminSettings, isLoading: settingsLoading } = useQuery({
+    queryKey: ["admin_settings"],
+    queryFn: () => rpc.settings.getAdminSettings(),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 15 * 60 * 1000, // 15 minutes
   });
 
-  const createPaymentMutation = useMutation({
+  const createDepositMutation = useMutation({
     mutationFn: async () => {
+      const amount = parseFloat(depositAmount);
+      
+      if (!depositAmount || isNaN(amount) || amount <= 0) {
+        throw new Error("Please enter a valid deposit amount");
+      }
       if (!selectedMethod) {
         throw new Error("Please select a payment method");
       }
       if (!termsAccepted) {
         throw new Error("Please accept the terms and conditions");
       }
-      // Validate that we have a valid plan ID
-      if (!currentPlan?.planId) {
-        throw new Error("No subscription plans available. Please contact support.");
-      }
-      return rpc.payment.createRequest(currentPlan.planId, selectedMethod);
+
+      return rpc.payment.createCustomDeposit(amount, selectedMethod);
     },
     onSuccess: () => {
-      toast.success("Payment request submitted! Admin will contact you soon.");
-      setTimeout(() => navigate("/"), 2000);
+      toast.success("Deposit request submitted! Admin will contact you soon.");
+      setTimeout(() => navigate("/dashboard"), 2000);
     },
     onError: (err: any) => {
-      toast.error(err.message || "Failed to create payment request");
+      toast.error(err.message || "Failed to create deposit request");
     },
   });
 
   if (!user) return null;
 
-  if (planLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-neutral-950 to-neutral-900 flex items-center justify-center">
-        <div className="text-white">Loading subscription details...</div>
-      </div>
-    );
-  }
-
-  const planAmount = currentPlan?.amount || 99.99;
+  const minimumDeposit = adminSettings?.minimum_deposit_amount || 29.99;
+  const depositAmountNum = parseFloat(depositAmount) || 0;
+  const isAmountValid = depositAmountNum >= minimumDeposit;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-neutral-950 to-neutral-900 text-white">
@@ -73,61 +74,78 @@ export default function SubscribePaymentPage() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/dashboard")}
             className="text-neutral-400 hover:text-white"
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <h1 className="ml-4 text-xl font-semibold">Subscribe to ComeClsr</h1>
+          <h1 className="ml-4 text-xl font-semibold">Deposit Credits</h1>
         </div>
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-12">
         {/* Progress Indicator */}
         <div className="mb-12">
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center justify-between">
             <div className="flex flex-col items-center">
               <div className="w-10 h-10 rounded-full bg-rose-500 text-white flex items-center justify-center font-bold">
                 1
               </div>
-              <p className="text-xs mt-2 text-neutral-400">Plan Selected</p>
+              <p className="text-xs mt-2 text-neutral-400">Deposit Amount</p>
             </div>
             <div className="flex-1 h-1 bg-rose-500/30 mx-4" />
             <div className="flex flex-col items-center">
-              <div className="w-10 h-10 rounded-full bg-rose-500 text-white flex items-center justify-center font-bold">
+              <div className="w-10 h-10 rounded-full border border-rose-500 text-rose-400 flex items-center justify-center font-bold">
                 2
               </div>
               <p className="text-xs mt-2 text-neutral-400">Payment Method</p>
             </div>
-            <div className="flex-1 h-1 bg-neutral-800 mx-4" />
-            <div className="flex flex-col items-center">
-              <div className="w-10 h-10 rounded-full border border-rose-500 text-rose-400 flex items-center justify-center font-bold">
-                3
-              </div>
-              <p className="text-xs mt-2 text-neutral-400">Confirmation</p>
-            </div>
           </div>
         </div>
 
-        {/* Plan Summary */}
+        {/* Deposit Amount Section */}
         <Card className="bg-neutral-900/60 border-neutral-800 mb-8">
           <CardHeader>
-            <CardTitle>Subscription Summary</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="w-5 h-5" />
+              Enter Deposit Amount
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex justify-between items-center pb-4 border-b border-neutral-800">
-              <span className="text-neutral-400">Monthly Plan</span>
-              <span className="font-semibold">${planAmount.toFixed(2)}</span>
+            <div>
+              <label className="block text-sm font-medium text-neutral-300 mb-2">
+                Amount (USD)
+              </label>
+              <div className="relative">
+                <span className="absolute left-4 top-3 text-neutral-400">$</span>
+                <Input
+                  type="number"
+                  placeholder="0.00"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  min="0"
+                  step="0.01"
+                  className="pl-8 bg-neutral-800 border-neutral-700 text-white placeholder-neutral-500"
+                />
+              </div>
+              <p className="text-xs text-neutral-400 mt-2">
+                Minimum deposit: ${minimumDeposit.toFixed(2)}
+              </p>
             </div>
-            <div className="flex justify-between items-center pb-4 border-b border-neutral-800">
-              <span className="text-neutral-400">Duration</span>
-              <span className="font-semibold">30 Days</span>
-            </div>
-            <div className="flex justify-between items-center pt-4">
-              <span className="text-neutral-400">Total Amount</span>
-              <span className="text-2xl font-bold text-rose-400">
-                ${planAmount.toFixed(2)}
-              </span>
+
+            {/* Deposit Summary */}
+            <div className="pt-4 border-t border-neutral-800">
+              <div className="flex justify-between items-center">
+                <span className="text-neutral-400">Deposit Amount</span>
+                <span className="text-2xl font-bold text-rose-400">
+                  ${depositAmountNum.toFixed(2)}
+                </span>
+              </div>
+              {!isAmountValid && depositAmount && (
+                <p className="text-xs text-red-400 mt-3">
+                  Amount must be at least ${minimumDeposit.toFixed(2)}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -171,7 +189,7 @@ export default function SubscribePaymentPage() {
                 className="mr-4 mt-1"
               />
               <span className="text-sm text-neutral-300">
-                I agree that admin will contact me via email with payment details. I understand that subscription access will be granted after payment confirmation.
+                I agree that admin will contact me via email with payment details. I understand that credits will be added to my account after payment confirmation.
               </span>
             </label>
           </CardContent>
@@ -182,36 +200,31 @@ export default function SubscribePaymentPage() {
           <Button
             variant="outline"
             className="flex-1 border-neutral-700"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/dashboard")}
           >
             Cancel
           </Button>
           <Button
             className="flex-1 bg-rose-500 hover:bg-rose-600 text-white"
-            disabled={!selectedMethod || !termsAccepted || createPaymentMutation.isPending || !currentPlan?.planId}
-            onClick={() => createPaymentMutation.mutate()}
+            disabled={!selectedMethod || !termsAccepted || !isAmountValid || createDepositMutation.isPending || settingsLoading}
+            onClick={() => createDepositMutation.mutate()}
           >
-            {createPaymentMutation.isPending ? "Processing..." : "Proceed to Payment"}
+            {createDepositMutation.isPending ? "Processing..." : `Deposit $${depositAmountNum.toFixed(2)}`}
           </Button>
         </div>
 
-        {!currentPlan?.planId && (
-          <div className="mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex gap-3">
-            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-red-300">
-              No subscription plans available at this time. Please contact support.
-            </div>
-          </div>
-        )}
-
         {/* Info Message */}
-        <div className="mt-8 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-300">
+        <div className="mt-8 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg flex gap-3">
+          <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-blue-300">
             <p className="font-semibold mb-1">How it works</p>
-            <p>
-              After you submit your payment request, our admin team will send you an email with payment instructions for your selected method. Once payment is confirmed, you'll receive access to start chatting with your assigned agent.
-            </p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Enter the amount you want to deposit</li>
+              <li>Select your preferred payment method</li>
+              <li>Our admin team will send you payment instructions via email</li>
+              <li>Once payment is confirmed, credits are added to your account</li>
+              <li>Each message deducts ${adminSettings?.message_cost_rate || '5.00'} from your credits</li>
+            </ul>
           </div>
         </div>
       </div>

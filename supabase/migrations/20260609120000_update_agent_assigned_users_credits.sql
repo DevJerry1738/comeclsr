@@ -1,0 +1,81 @@
+-- 20260609_update_agent_assigned_users_credits.sql
+-- Update agent_get_assigned_users to return users with active credit as well as assigned users, and include their credit balance.
+
+DROP FUNCTION IF EXISTS public.agent_get_assigned_users();
+
+CREATE OR REPLACE FUNCTION public.agent_get_assigned_users()
+RETURNS TABLE (
+  user_id UUID,
+  username VARCHAR,
+  full_name VARCHAR,
+  email VARCHAR,
+  phone VARCHAR,
+  profile_photo TEXT,
+  subscription_status TEXT,
+  subscription_expires_at TIMESTAMP,
+  assigned_at TIMESTAMP,
+  credit_balance NUMERIC
+) AS $$
+BEGIN
+  IF NOT (SELECT role = 'agent' FROM public.user_profiles WHERE id = auth.uid() LIMIT 1) THEN
+    RAISE EXCEPTION 'Unauthorized: Agent role required';
+  END IF;
+
+  RETURN QUERY
+  WITH all_users AS (
+    -- 1. Users assigned via agent_assignments
+    SELECT 
+      up.id AS u_id,
+      up.username AS u_username,
+      up.full_name AS u_full_name,
+      up.email AS u_email,
+      up.phone AS u_phone,
+      up.profile_photo AS u_profile_photo,
+      COALESCE(us.status, 'none') AS u_sub_status,
+      us.expires_at AS u_sub_expires,
+      aa.assigned_at AS u_assigned_at,
+      COALESCE(uc.balance, 0)::NUMERIC AS u_credit_balance
+    FROM public.agent_assignments aa
+    JOIN public.user_profiles up ON aa.user_id = up.id
+    LEFT JOIN public.user_subscriptions us ON up.id = us.user_id
+    LEFT JOIN public.user_credits uc ON up.id = uc.user_id
+    WHERE aa.agent_id = auth.uid()
+    AND aa.status = 'active'
+    
+    UNION
+    
+    -- 2. Users who have a conversation with the agent and have active credit (>0)
+    SELECT 
+      up.id AS u_id,
+      up.username AS u_username,
+      up.full_name AS u_full_name,
+      up.email AS u_email,
+      up.phone AS u_phone,
+      up.profile_photo AS u_profile_photo,
+      'credits' AS u_sub_status,
+      NULL::TIMESTAMP AS u_sub_expires,
+      c.created_at AS u_assigned_at,
+      COALESCE(uc.balance, 0)::NUMERIC AS u_credit_balance
+    FROM public.conversations c
+    JOIN public.agents a ON c.agent_id = a.id
+    JOIN public.user_profiles up ON c.user_id = up.id
+    JOIN public.user_credits uc ON up.id = uc.user_id
+    WHERE a.user_id = auth.uid()
+    AND c.status = 'active'
+    AND uc.balance > 0
+  )
+  SELECT DISTINCT ON (u_id)
+    u_id,
+    u_username,
+    u_full_name,
+    u_email,
+    u_phone,
+    u_profile_photo,
+    u_sub_status,
+    u_sub_expires,
+    u_assigned_at,
+    u_credit_balance
+  FROM all_users
+  ORDER BY u_id, u_assigned_at DESC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;

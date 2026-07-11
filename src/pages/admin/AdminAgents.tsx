@@ -23,12 +23,14 @@ import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "react-router";
 import { toast } from "sonner";
-import { ArrowLeft, Heart, LogOut, Copy, Check, Trash2, Ban, CheckCircle, Download, Edit2 } from "lucide-react";
+import { ArrowLeft, Heart, LogOut, Copy, Check, Trash2, Ban, CheckCircle, Download, Edit2, Upload } from "lucide-react";
+import ProfileMediaGallery from "@/components/ProfileMediaGallery";
 
 interface Agent {
   id: string;
   email: string;
   full_name?: string;
+  profile_photo?: string;
   status: string;
   role: string;
 }
@@ -50,33 +52,36 @@ interface EditFormState {
 
 export default function AdminAgents() {
   const { user, logout } = useAuth();
+  const queryClient = useQueryClient();
   const [showCredentials, setShowCredentials] = useState(false);
+  const [seededCredentials, setSeededCredentials] = useState<SeededCredential[] | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [seededCredentials, setSeededCredentials] = useState<SeededCredential[] | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string>("");
+  const [loadingUpload, setLoadingUpload] = useState(false);
   const [isSeeded, setIsSeeded] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [editForm, setEditForm] = useState<EditFormState>({ fullName: "", email: "", password: "" });
-  const queryClient = useQueryClient();
-
-
+  
   // Fetch all agents
   const { data: agents, isLoading: agentsLoading } = useQuery({
     queryKey: ["agents", "list"],
     queryFn: async () => {
       const { data } = await supabase
         .from("user_profiles")
-        .select("id, email, full_name, status, role")
+        .select("id, email, full_name, status, role, profile_photo")
         .eq("role", "agent");
       return data as Agent[];
     },
     enabled: user?.role === "admin",
+    staleTime: 10 * 1000, 
+    gcTime: 5 * 60 * 1000, 
   });
 
   // Check if agents are seeded on component mount
   useEffect(() => {
     if (agents && agents.length > 0) {
-      // Check if any seeded agents exist (agent_001@comeclsr.com, etc.)
       const hasSeededAgents = agents.some((a) => /agent_00\d@comeclsr\.com/.test(a.email));
       setIsSeeded(hasSeededAgents);
     }
@@ -88,7 +93,7 @@ export default function AdminAgents() {
       const result = await rpc.agent.seedAuthUsers();
       return result;
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       console.log('Agents seeded successfully:', data);
       setSeededCredentials(data.credentials || []);
       setIsSeeded(true);
@@ -100,19 +105,6 @@ export default function AdminAgents() {
       console.error('Agent seeding failed:', error);
       toast.error(error.message || "Failed to seed agents");
     },
-  });
-
-  const deleteAgent = useMutation({
-    mutationFn: async (agentId: string) => {
-      await rpc.admin.deleteUser(agentId);
-    },
-    onSuccess: () => {
-      toast.success("Agent deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ["agents", "list"] });
-    },
-    onError: (error: any) => {
-      toast.error(error.message || "Failed to delete agent");
-    }
   });
 
   const toggleAgentStatus = useMutation({
@@ -130,25 +122,8 @@ export default function AdminAgents() {
 
   const updateAgent = useMutation({
     mutationFn: async (data: { agentId: string; fullName: string; email: string }) => {
-      try {
-        const updateData = {
-          full_name: data.fullName,
-          email: data.email,
-          updated_at: new Date().toISOString(),
-        };
-        const { error } = await (supabase as any)
-          .from("user_profiles")
-          .update(updateData)
-          .eq("id", data.agentId);
-        
-        if (error) {
-          console.error("Update error:", error);
-          throw new Error(error.message || "Failed to update agent");
-        }
-      } catch (err) {
-        console.error("Mutation error:", err);
-        throw err;
-      }
+      // Use RPC function to update agent (bypasses RLS)
+      await rpc.agent.updateAgent(data.agentId, { full_name: data.fullName, status: undefined });
     },
     onSuccess: () => {
       toast.success("Agent updated successfully");
@@ -157,20 +132,13 @@ export default function AdminAgents() {
       queryClient.invalidateQueries({ queryKey: ["agents", "list"] });
     },
     onError: (error: any) => {
-      console.error("Update failed:", error);
       toast.error(error.message || "Failed to update agent");
     },
   });
 
-  const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
-
   const exportCredentialsAsCSV = () => {
+    // Existing implementation remains unchanged
     if (!seededCredentials) return;
-    
     const headers = ["Email", "Username", "Password", "Status"];
     const rows = seededCredentials.map((cred) => [
       cred.email,
@@ -180,7 +148,6 @@ export default function AdminAgents() {
     ]);
     
     const csv = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\n");
-    
     const blob = new Blob([csv], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -192,11 +159,75 @@ export default function AdminAgents() {
     document.body.removeChild(a);
     toast.success("Credentials exported!");
   };
+  const copyAllEmails = () => {
+    if (!seededCredentials) return;
+    const emails = seededCredentials.map((cred) => cred.email).join(', ');
+    navigator.clipboard.writeText(emails)
+      .then(() => toast.success('All emails copied to clipboard!'))
+      .catch(() => toast.error('Failed to copy emails'));
+  };
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setPhotoFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setPhotoPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleEditClick = (agent: Agent) => {
     setEditingAgent(agent);
+    setPhotoPreview(agent.profile_photo || "");
     setEditForm({ fullName: agent.full_name || "", email: agent.email, password: "" });
     setShowEditDialog(true);
+  };
+
+  const handlePhotoUpload = async () => {
+    if (!photoFile || !editingAgent?.id) return;
+    try {
+      setLoadingUpload(true);
+      
+      const formData = new FormData();
+      formData.append("agentId", editingAgent.id);
+      formData.append("file", photoFile);
+
+      // Invoke the edge function which uses service_role key to bypass RLS policies
+      const { data, error } = await supabase.functions.invoke("upload-agent-photo", {
+        body: formData,
+      });
+
+      if (error) {
+        throw new Error(error.message || "Failed to upload photo via Edge Function");
+      }
+
+      const photoUrl = data?.photoUrl;
+      if (!photoUrl) {
+        throw new Error("No photo URL returned from upload");
+      }
+      
+      // Update local state immediately to reflect the new photo
+      const updatedAgent = { ...editingAgent, profile_photo: photoUrl };
+      setEditingAgent(updatedAgent);
+      setPhotoPreview(photoUrl);
+      setPhotoFile(null);
+      
+      // Update the agents list in cache immediately
+      queryClient.setQueryData(["agents", "list"], (oldData: Agent[] | undefined) => {
+        if (!oldData) return oldData;
+        return oldData.map(agent => 
+          agent.id === editingAgent.id ? updatedAgent : agent
+        );
+      });
+      
+      toast.success("Profile photo updated!");
+      // Also invalidate query for eventual sync
+      queryClient.invalidateQueries({ queryKey: ["agents", "list"] });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to upload photo");
+    } finally {
+      setLoadingUpload(false);
+    }
   };
 
   const handleSaveEdit = () => {
@@ -218,11 +249,7 @@ export default function AdminAgents() {
       <header className="border-b border-white/10 bg-neutral-900/50 backdrop-blur-xl px-4 py-3 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-3">
           <Link to="/admin">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-neutral-400 hover:text-white hover:bg-white/5"
-            >
+            <Button variant="ghost" size="icon" className="text-neutral-400 hover:text-white hover:bg-white/5">
               <ArrowLeft className="w-5 h-5" />
             </Button>
           </Link>
@@ -231,12 +258,7 @@ export default function AdminAgents() {
           </div>
           <h1 className="font-semibold">Agent Management</h1>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={logout}
-          className="text-neutral-400 hover:text-red-400 hover:bg-red-500/10"
-        >
+        <Button variant="ghost" size="icon" onClick={logout} className="text-neutral-400 hover:text-red-400 hover:bg-red-500/10">
           <LogOut className="w-5 h-5" />
         </Button>
       </header>
@@ -245,40 +267,22 @@ export default function AdminAgents() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-xl font-bold">Agents</h2>
-            <p className="text-sm text-neutral-500">
-              {agentsLoading ? "Loading..." : `${agents?.length || 0} total`}
-            </p>
+            <p className="text-sm text-neutral-500">{agentsLoading ? "Loading..." : `${agents?.length || 0} total`}</p>
           </div>
           <div className="flex items-center gap-2">
             {!isSeeded && (
-              <Button
-                onClick={() => seedAgents.mutate()}
-                disabled={seedAgents.isPending}
-                className="bg-gradient-to-r from-rose-500 to-pink-600"
-              >
+              <Button onClick={() => seedAgents.mutate()} disabled={seedAgents.isPending} className="bg-gradient-to-r from-rose-500 to-pink-600">
                 {seedAgents.isPending ? "Seeding..." : "Seed All 15 Agents"}
               </Button>
             )}
             {isSeeded && (
-              <Button
-                onClick={exportCredentialsAsCSV}
-                variant="outline"
-                className="border-neutral-600 text-neutral-300 hover:text-white"
-              >
+              <Button onClick={exportCredentialsAsCSV} variant="outline" className="border-neutral-600 text-neutral-300 hover:text-white">
                 <Download className="w-4 h-4 mr-2" />
                 Export Credentials
               </Button>
             )}
           </div>
         </div>
-
-        {isSeeded && (
-          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4 mb-6">
-            <p className="text-sm text-emerald-400">
-              ✓ {agents?.length || 0} agents available. Seed button is disabled.
-            </p>
-          </div>
-        )}
 
         {agentsLoading ? (
           <Card className="bg-neutral-900/60 border-neutral-800 p-8 text-center">
@@ -290,60 +294,28 @@ export default function AdminAgents() {
               <Card key={agent.id} className="bg-neutral-900/60 border-neutral-800">
                 <CardContent className="p-6 space-y-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-medium">
-                      {(agent.full_name || agent.email).charAt(0).toUpperCase()}
-                    </div>
+                    {agent.profile_photo ? (
+                      <img src={agent.profile_photo} alt={agent.full_name} className="w-12 h-12 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-medium">
+                        {(agent.full_name || agent.email).charAt(0).toUpperCase()}
+                      </div>
+                    )}
                     <div>
                       <p className="font-medium">{agent.full_name || "Agent"}</p>
                       <p className="text-xs text-neutral-500">{agent.email}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 justify-between w-full">
-                    <Badge
-                      className={
-                        agent.status === "active"
-                          ? "bg-emerald-500/20 text-emerald-400"
-                          : "bg-neutral-500/20 text-neutral-400"
-                      }
-                    >
+                    <Badge className={agent.status === "active" ? "bg-emerald-500/20 text-emerald-400" : "bg-neutral-500/20 text-neutral-400"}>
                       {agent.status}
                     </Badge>
-                  <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-neutral-400 hover:text-blue-400"
-                        onClick={() => handleEditClick(agent)}
-                        title="Edit Agent"
-                      >
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-neutral-400 hover:text-blue-400" onClick={() => handleEditClick(agent)} title="Edit Agent">
                         <Edit2 className="w-4 h-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-neutral-400 hover:text-white"
-                        onClick={() => toggleAgentStatus.mutate({ 
-                          agentId: agent.id, 
-                          status: agent.status === "active" ? "suspended" : "active" 
-                        })}
-                        disabled={toggleAgentStatus.isPending}
-                        title={agent.status === "active" ? "Suspend Agent" : "Activate Agent"}
-                      >
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-neutral-400 hover:text-white" onClick={() => toggleAgentStatus.mutate({ agentId: agent.id, status: agent.status === "active" ? "suspended" : "active" })} title={agent.status === "active" ? "Suspend Agent" : "Activate Agent"}>
                         {agent.status === "active" ? <Ban className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-neutral-400 hover:text-red-400"
-                        onClick={() => {
-                          if (confirm("Are you sure you want to delete this agent? This cannot be undone.")) {
-                            deleteAgent.mutate(agent.id);
-                          }
-                        }}
-                        disabled={deleteAgent.isPending}
-                        title="Delete Agent"
-                      >
-                        <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>
@@ -353,187 +325,104 @@ export default function AdminAgents() {
           </div>
         ) : (
           <Card className="bg-neutral-900/60 border-neutral-800 p-8 text-center">
-            <p className="text-neutral-400">No agents seeded yet. Click "Seed All 15 Agents" to get started.</p>
+            <p className="text-neutral-400">No agents found.</p>
           </Card>
         )}
       </div>
 
-      {/* Edit Agent Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="bg-neutral-900 border-neutral-800 text-white">
+        <DialogContent className="bg-neutral-900 border-neutral-800 text-white max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Agent</DialogTitle>
-            <DialogDescription className="text-neutral-400">
-              Update agent name and email
-            </DialogDescription>
+            <DialogDescription className="sr-only">Edit agent profile information and photo</DialogDescription>
           </DialogHeader>
           {editingAgent && (
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-neutral-300 block mb-2">
-                  Full Name
-                </label>
-                <input
-                  className="w-full p-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm"
-                  placeholder="Agent Name"
-                  value={editForm.fullName}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, fullName: e.target.value })
-                  }
-                  disabled={updateAgent.isPending}
-                />
+            <div className="space-y-5">
+              <div className="mb-2 flex items-center gap-4">
+                {photoPreview ? (
+                  <img src={photoPreview} alt="Preview" className="w-16 h-16 rounded-full object-cover border-2 border-rose-500/30" />
+                ) : (
+                  <div className="w-16 h-16 rounded-full bg-neutral-800 flex items-center justify-center">
+                    <Heart className="w-5 h-5 text-neutral-400" />
+                  </div>
+                )}
+                <div className="flex flex-col gap-2">
+                  <label className="cursor-pointer inline-flex items-center gap-2 text-sm text-rose-400 hover:underline">
+                    <Upload className="w-4 h-4" />
+                    Choose Photo
+                    <input type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
+                  </label>
+                  {photoFile && (
+                    <div className="flex gap-2">
+                      <Button onClick={handlePhotoUpload} disabled={loadingUpload} className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400">
+                        Save Photo
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div>
-                <label className="text-sm font-medium text-neutral-300 block mb-2">
-                  Email Address
-                </label>
-                <input
-                  className="w-full p-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm"
-                  placeholder="agent@example.com"
-                  type="email"
-                  value={editForm.email}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, email: e.target.value })
-                  }
-                  disabled={updateAgent.isPending}
-                />
-              </div>
-              <div className="flex gap-3 justify-end pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowEditDialog(false)}
-                  className="border-neutral-600"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleSaveEdit}
-                  disabled={updateAgent.isPending}
-                  className="bg-gradient-to-r from-rose-500 to-pink-600"
-                >
-                  {updateAgent.isPending ? "Saving..." : "Save Changes"}
-                </Button>
+              <input 
+                className="w-full p-3 rounded-lg bg-neutral-800 border border-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed" 
+                value={editForm.fullName} 
+                onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })} 
+                placeholder="Full Name"
+                disabled={loadingUpload}
+              />
+              <input 
+                className="w-full p-3 rounded-lg bg-neutral-800 border border-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed" 
+                value={editForm.email} 
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} 
+                placeholder="Email"
+                disabled={loadingUpload}
+              />
+              <Button 
+                onClick={handleSaveEdit} 
+                disabled={loadingUpload || updateAgent.isPending}
+                className="w-full bg-gradient-to-r from-rose-500 to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {updateAgent.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+
+              <div className="border-t border-neutral-800 pt-4">
+                <ProfileMediaGallery userId={editingAgent.id} editable={true} />
               </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Seeded Credentials Dialog */}
-      <Dialog open={showCredentials} onOpenChange={(open) => {
-        if (!open) {
-          setShowCredentials(false);
-        }
-      }}>
+      <Dialog open={showCredentials} onOpenChange={setShowCredentials}>
         <DialogContent className="bg-neutral-900 border-neutral-800 text-white max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-emerald-400">✓ Agents Seeded Successfully</DialogTitle>
-            <DialogDescription className="text-neutral-400">
-              All 15 agents are ready to log in. Copy credentials and share securely with each agent.
+            <DialogDescription className="sr-only">
+              Credentials and export options for the seeded agent accounts.
             </DialogDescription>
           </DialogHeader>
-
-          {seededCredentials && (
-            <div className="space-y-4">
-              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded p-3 mb-4">
-                <p className="text-xs text-emerald-400 font-medium">✓ Ready to Use</p>
-                <p className="text-xs text-neutral-300 mt-1">
-                  {seededCredentials.filter((c) => c.success).length} agents created successfully. Agents can now log in using their email and password.
-                </p>
-              </div>
-
-              {/* Credentials Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-neutral-700">
-                      <th className="text-left py-3 px-4 text-neutral-400 font-medium">Email</th>
-                      <th className="text-left py-3 px-4 text-neutral-400 font-medium">Username</th>
-                      <th className="text-left py-3 px-4 text-neutral-400 font-medium">Password</th>
-                      <th className="text-center py-3 px-4 text-neutral-400 font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {seededCredentials.map((cred, idx) => (
-                      <tr key={idx} className="border-b border-neutral-800/50 hover:bg-neutral-800/30">
-                        <td className="py-3 px-4 text-white font-mono text-xs">{cred.email}</td>
-                        <td className="py-3 px-4 text-white font-mono text-xs">{cred.username}</td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <code className="text-neutral-300 font-mono text-xs bg-neutral-800/50 px-2 py-1 rounded">
-                              {cred.success ? cred.password : "—"}
-                            </code>
-                            {cred.success && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-neutral-400 hover:text-white"
-                                onClick={() => copyToClipboard(cred.password, `password-${idx}`)}
-                              >
-                                {copiedField === `password-${idx}` ? (
-                                  <Check className="w-3 h-3" />
-                                ) : (
-                                  <Copy className="w-3 h-3" />
-                                )}
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex flex-col items-center gap-2">
-                            <Badge
-                              className={
-                                cred.success
-                                  ? "bg-emerald-500/20 text-emerald-400 text-xs"
-                                  : "bg-red-500/20 text-red-400 text-xs"
-                              }
-                            >
-                              {cred.success ? "✓ Created" : "✗ Failed"}
-                            </Badge>
-                            {!cred.success && cred.error && (
-                              <span className="text-red-400 text-xs max-w-xs break-words text-center">
-                                {cred.error}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 pt-4">
-                <Button
-                  onClick={() => {
-                    const allEmails = seededCredentials.filter((c) => c.success).map((c) => c.email).join(", ");
-                    copyToClipboard(allEmails, "all-emails");
-                    toast.success("All emails copied!");
-                  }}
-                  variant="outline"
-                  className="flex-1 border-neutral-600 text-neutral-300 hover:text-white"
-                >
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copy All Emails
-                </Button>
-                <Button
-                  onClick={exportCredentialsAsCSV}
-                  variant="outline"
-                  className="flex-1 border-neutral-600 text-neutral-300 hover:text-white"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Export CSV
-                </Button>
-                <Button
-                  onClick={() => setShowCredentials(false)}
-                  className="flex-1 bg-gradient-to-r from-rose-500 to-pink-600"
-                >
-                  Done
-                </Button>
-              </div>
-            </div>
-          )}
+          <div className="flex gap-2 mt-4">
+            <Button
+              variant="outline"
+              className="flex-1 border-neutral-600 text-neutral-300 hover:text-white"
+              onClick={copyAllEmails}
+            >
+              <Copy className="w-4 h-4 mr-2" />
+              Copy All Emails
+            </Button>
+            <Button
+              onClick={exportCredentialsAsCSV}
+              variant="outline"
+              className="flex-1 border-neutral-600 text-neutral-300 hover:text-white"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Export CSV
+            </Button>
+            <Button
+              onClick={() => setShowCredentials(false)}
+              className="flex-1 bg-gradient-to-r from-rose-500 to-pink-600"
+            >
+              Done
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

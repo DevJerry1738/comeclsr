@@ -33,6 +33,8 @@ export default function Tickets() {
     queryKey: ['tickets', 'my'],
     queryFn: () => rpc.ticket.myTickets(),
     enabled: !!user,
+    staleTime: 10 * 1000, // 10 seconds
+    gcTime: 3 * 60 * 1000, // 3 minutes
   });
 
   const createTicket = useMutation({

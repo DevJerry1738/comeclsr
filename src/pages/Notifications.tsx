@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { Bell, Check, BellRing } from "lucide-react";
@@ -10,31 +11,25 @@ import AppShell from "@/components/AppShell";
 export default function Notifications() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const fetchNotifications = async () => {
-    if (!user?.id) return;
-    try {
-      setLoading(true);
+  const { data: notifications = [], isLoading } = useQuery<any[]>({
+    queryKey: ["notifications", "all", user?.id],
+    queryFn: async () => {
       const { data, error } = await supabase
         .from("notifications")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", user!.id)
         .order("created_at", { ascending: false });
-        
       if (error) throw error;
-      setNotifications(data || []);
-    } catch (err: any) {
-      console.error("Error fetching notifications:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return data || [];
+    },
+    enabled: !!user?.id,
+    staleTime: 10 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
-  useEffect(() => {
-    fetchNotifications();
-  }, [user?.id]);
+  const loading = isLoading;
 
   const markAsRead = async (id: number) => {
     try {
@@ -45,9 +40,8 @@ export default function Notifications() {
 
       if (error) throw error;
       
-      setNotifications(prev => 
-        prev.map(n => n.id === id ? { ...n, is_read: true } : n)
-      );
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["messages", "unreadCount"] });
       toast.success("Marked as read");
     } catch (err: any) {
       toast.error("Failed to mark as read");
@@ -64,9 +58,8 @@ export default function Notifications() {
 
       if (error) throw error;
       
-      setNotifications(prev => 
-        prev.map(n => ({ ...n, is_read: true }))
-      );
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["messages", "unreadCount"] });
       toast.success("All marked as read");
     } catch (err: any) {
       toast.error("Failed to mark all as read");

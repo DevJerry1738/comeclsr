@@ -6,7 +6,8 @@ import ResetPassword from "./pages/ResetPassword"
 import Dashboard from "./pages/Dashboard"
 import Messages from "./pages/Messages"
 import Tickets from "./pages/Tickets"
-import Subscribe from "./pages/Subscribe"
+import Deposit from "./pages/Deposit"
+import DepositPaymentPage from "./pages/DepositPaymentPage"
 import PaymentConfirmation from "./pages/PaymentConfirmation"
 import Notifications from "./pages/Notifications"
 import AdminDashboard from "./pages/admin/AdminDashboard"
@@ -39,7 +40,8 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/subscribe" element={<ProtectedRoute><Subscribe /></ProtectedRoute>} />
+      <Route path="/deposit" element={<ProtectedRoute><Deposit /></ProtectedRoute>} />
+      <Route path="/deposit-payment" element={<ProtectedRoute><DepositPaymentPage /></ProtectedRoute>} />
       <Route path="/payment-confirmation" element={<ProtectedRoute><PaymentConfirmation /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />

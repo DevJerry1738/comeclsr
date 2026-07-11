@@ -22,6 +22,8 @@ export default function AdminUsers() {
     queryKey: ['admin', 'users'],
     queryFn: () => rpc.admin.getUsers(),
     enabled: user?.role === 'admin',
+    staleTime: 10 * 1000, // 10 seconds
+    gcTime: 5 * 60 * 1000, // 5 minutes
   });
 
   const updateUser = useMutation({
@@ -95,12 +97,8 @@ export default function AdminUsers() {
               <thead>
                 <tr className="border-b border-neutral-800 text-left">
                   <th className="p-4 text-xs font-medium text-neutral-500 uppercase">User</th>
-                  <th className="p-4 text-xs font-medium text-neutral-500 uppercase">Status</th>
-                  <th className="p-4 text-xs font-medium text-neutral-500 uppercase">Payment</th>
-                  <th className="p-4 text-xs font-medium text-neutral-500 uppercase">KYC</th>
-                  <th className="p-4 text-xs font-medium text-neutral-500 uppercase">Chat</th>
-                  <th className="p-4 text-xs font-medium text-neutral-500 uppercase">Agent</th>
-                  <th className="p-4 text-xs font-medium text-neutral-500 uppercase">Actions</th>
+                  <th className="p-4 text-xs font-medium text-neutral-500 uppercase">Credit Balance</th>
+                  <th className="p-4 text-xs font-medium text-neutral-500 uppercase text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -116,15 +114,15 @@ export default function AdminUsers() {
                         </div>
                       </div>
                     </td>
-                    <td className="p-4"><Badge className={getStatusColor(u.status)}>{u.status}</Badge></td>
-                    <td className="p-4"><Badge className={getStatusColor(u.payment_status)}>{u.payment_status}</Badge></td>
-                    <td className="p-4"><Badge className={getStatusColor(u.kyc_status)}>{u.kyc_status}</Badge></td>
-                    <td className="p-4"><span className="text-sm text-neutral-400">—</span></td>
                     <td className="p-4">
-                      <div className="flex gap-1">
+                      <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 bg-emerald-500/10">
+                        {Number(u.credit_balance || 0).toFixed(2)}
+                      </Badge>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex gap-2 justify-end">
                         <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-neutral-400 hover:text-white" onClick={() => { setSelectedUser(u); setShowDetail(true); }}><Eye className="w-4 h-4" /></Button>
-                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-neutral-400 hover:text-amber-400" onClick={() => updateUser.mutate({ id: u.id, status: u.status === "suspended" ? "active" : "suspended" })}><Ban className="w-4 h-4" /></Button>
-                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-neutral-400 hover:text-red-400" onClick={() => confirm("Delete this user?") && deleteUser.mutate(u.id)}><Trash2 className="w-4 h-4" /></Button>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-neutral-400 hover:text-red-400" onClick={() => confirm("Are you sure you want to completely delete this user? This cannot be undone.") && deleteUser.mutate(u.id)}><Trash2 className="w-4 h-4" /></Button>
                       </div>
                     </td>
                   </tr>
@@ -148,36 +146,13 @@ export default function AdminUsers() {
                 <div><p className="text-xs text-neutral-500">Created</p><p className="text-sm">{new Date(selectedUser.created_at).toLocaleDateString()}</p></div>
               </div>
 
-              <div className="flex gap-3">
-                <select className="p-2 rounded bg-neutral-800 border border-neutral-700 text-sm text-white" onChange={e => updateUser.mutate({ id: selectedUser.id, status: e.target.value })} defaultValue={selectedUser.status}>
-                  <option value="active">Active</option>
-                  <option value="suspended">Suspended</option>
-                  <option value="blocked">Blocked</option>
-                  <option value="pending">Pending</option>
-                </select>
-                <select className="p-2 rounded bg-neutral-800 border border-neutral-700 text-sm text-white" onChange={e => updateUser.mutate({ id: selectedUser.id, paymentStatus: e.target.value as any })} defaultValue={selectedUser.paymentStatus}>
-                  <option value="pending">Payment Pending</option>
-                  <option value="approved">Payment Approved</option>
-                  <option value="rejected">Payment Rejected</option>
-                </select>
-                <select className="p-2 rounded bg-neutral-800 border border-neutral-700 text-sm text-white" onChange={e => updateUser.mutate({ id: selectedUser.id, kycStatus: e.target.value as any })} defaultValue={selectedUser.kycStatus}>
-                  <option value="pending">KYC Pending</option>
-                  <option value="submitted">KYC Submitted</option>
-                  <option value="approved">KYC Approved</option>
-                  <option value="rejected">KYC Rejected</option>
-                </select>
-                <select className="p-2 rounded bg-neutral-800 border border-neutral-700 text-sm text-white" onChange={e => updateUser.mutate({ id: selectedUser.id, conversationStatus: e.target.value as any })} defaultValue={selectedUser.conversationStatus}>
-                  <option value="pending">Chat Pending</option>
-                  <option value="assigned">Chat Assigned</option>
-                  <option value="active">Chat Active</option>
-                  <option value="stopped">Chat Stopped</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <KeyRound className="w-4 h-4 text-neutral-500" />
-                <input className="flex-1 p-2 rounded bg-neutral-800 border border-neutral-700 text-sm text-white" placeholder="New password" value={newPassword} onChange={e => setNewPassword(e.target.value)} type="text" />
-                <Button size="sm" onClick={() => newPassword && resetPassword.mutate({ id: selectedUser.id, newPassword })} className="bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30">Reset</Button>
+              <div className="border-t border-neutral-800 pt-4">
+                <h3 className="text-sm font-medium mb-3 text-neutral-400 uppercase tracking-wide text-xs">Account Management</h3>
+                <div className="flex items-center gap-3">
+                  <KeyRound className="w-4 h-4 text-neutral-500" />
+                  <input className="flex-1 p-2 rounded bg-neutral-800 border border-neutral-700 text-sm text-white focus:outline-none focus:border-rose-500/50" placeholder="Type a new password" value={newPassword} onChange={e => setNewPassword(e.target.value)} type="text" />
+                  <Button size="sm" onClick={() => newPassword && resetPassword.mutate({ id: selectedUser.id, newPassword })} className="bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30">Reset Password</Button>
+                </div>
               </div>
             </div>
           )}

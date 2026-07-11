@@ -3,28 +3,19 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "react-router";
 import { toast } from "sonner";
-import { ArrowLeft, Heart, LogOut, CheckCircle } from "lucide-react";
+import { ArrowLeft, Heart, LogOut, CheckCircle, DollarSign, UserCheck } from "lucide-react";
 
 interface PaymentRequest {
   request_id: string;
@@ -32,104 +23,85 @@ interface PaymentRequest {
   username: string;
   full_name: string;
   email: string;
-  plan_id: string;
+  plan_id: string | null;
   plan_name: string;
   amount: number;
   payment_method: string;
-  status: "pending" | "confirmed" | "rejected";
+  status: "pending" | "confirmed" | "failed" | "refunded";
   requested_at: string;
+  credits_to_grant: number | null;
 }
 
-interface Agent {
-  id: string;
-  email: string;
-  full_name?: string;
-}
-
-type FilterStatus = "all" | "pending" | "confirmed" | "rejected";
+type FilterStatus = "all" | "pending" | "confirmed" | "failed";
 
 const STATUS_COLORS: Record<string, string> = {
   pending:   "bg-amber-500/20 text-amber-400 border-amber-500/30",
   confirmed: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  rejected:  "bg-red-500/20 text-red-400 border-red-500/30",
+  failed:    "bg-red-500/20 text-red-400 border-red-500/30",
+  refunded:  "bg-neutral-500/20 text-neutral-400 border-neutral-500/30",
 };
 
 export default function AdminPayments() {
   const { user, logout } = useAuth();
   const queryClient = useQueryClient();
-  const [selectedAgent, setSelectedAgent] = useState<string>("");
-  const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null);
+  const [selectedPayment, setSelectedPayment] = useState<PaymentRequest | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [creditsToGrant, setCreditsToGrant] = useState<string>("");
+  const [adminNotes, setAdminNotes] = useState<string>("");
   const [filter, setFilter] = useState<FilterStatus>("all");
 
-  // Fetch ALL payment requests (not just pending) so history is preserved after approval
+  // Fetch all payment requests with user and package info
   const { data: payments, isLoading: paymentsLoading, error: paymentsError } = useQuery({
     queryKey: ["payment", "all"],
     queryFn: async () => {
-      // Query all payment_requests regardless of status
-      const { data: paymentRequests, error: paymentsError } = await supabase
+      const { data: paymentRequests, error } = await supabase
         .from("payment_requests")
-        .select("id, user_id, plan_id, payment_method, amount, status, requested_at")
+        .select("id, user_id, plan_id, payment_method, amount, status, requested_at, admin_notes, credits_to_grant")
         .order("requested_at", { ascending: false });
 
-      if (paymentsError) {
-        console.error("Error fetching payment_requests:", paymentsError.message, paymentsError.details, paymentsError.code);
-        throw paymentsError;
+      if (error) {
+        console.error("Error fetching payment_requests:", error.message);
+        throw error;
       }
-
       if (!paymentRequests || paymentRequests.length === 0) return [];
 
-      const userIds = [...new Set((paymentRequests).map((p: any) => p.user_id))];
-      const planIds = [...new Set((paymentRequests).map((p: any) => p.plan_id))];
+      const userIds = [...new Set(paymentRequests.map((p: any) => p.user_id))];
+      const planIds = [...new Set(paymentRequests.map((p: any) => p.plan_id).filter(Boolean))];
 
-      const { data: users } = await supabase
-        .from("user_profiles")
-        .select("id, email, full_name, username")
-        .in("id", userIds);
-
-      const { data: plans } = await supabase
-        .from("subscription_plans")
-        .select("id, name")
-        .in("id", planIds);
+      const [{ data: users }, { data: plans }] = await Promise.all([
+        supabase.from("user_profiles").select("id, email, full_name, username").in("id", userIds),
+        planIds.length > 0
+          ? supabase.from("credit_packages").select("id, name, credit_amount").in("id", planIds)
+          : Promise.resolve({ data: [] }),
+      ]);
 
       const usersMap = new Map((users || []).map((u: any) => [u.id, u]));
       const plansMap = new Map((plans || []).map((p: any) => [p.id, p]));
 
-      return (paymentRequests).map((item: any) => {
+      return paymentRequests.map((item: any) => {
         const userData = usersMap.get(item.user_id);
-        const planData = plansMap.get(item.plan_id);
+        const planData = item.plan_id ? plansMap.get(item.plan_id) : null;
         return {
           request_id: item.id,
           user_id: item.user_id,
-          username: userData?.username || "",
-          full_name: userData?.full_name || "",
-          email: userData?.email || "",
-          plan_id: item.plan_id,
-          plan_name: planData?.name || "",
+          username: userData?.username || "User",
+          full_name: userData?.full_name || userData?.email || "Unknown",
+          email: userData?.email || "—",
+          plan_id: item.plan_id ?? null,
+          plan_name: planData?.name ?? (item.plan_id ? "Unknown Package" : "Custom Deposit"),
           amount: item.amount,
           payment_method: item.payment_method,
           status: item.status,
           requested_at: item.requested_at,
-        };
-      }) as PaymentRequest[];
+          credits_to_grant: item.credits_to_grant ?? (planData ? (planData as any).credit_amount : null),
+        } as PaymentRequest;
+      });
     },
     enabled: user?.role === "admin",
+    staleTime: 5 * 1000,
+    gcTime: 2 * 60 * 1000,
   });
 
-  // Fetch available agents
-  const { data: agents, isLoading: agentsLoading } = useQuery({
-    queryKey: ["agents", "list"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("user_profiles")
-        .select("id, email, full_name")
-        .eq("role", "agent");
-      return data as Agent[];
-    },
-    enabled: user?.role === "admin",
-  });
-
-  // Derived: filtered list based on active tab
   const filteredPayments = (payments || []).filter((p) =>
     filter === "all" ? true : p.status === filter
   );
@@ -138,106 +110,46 @@ export default function AdminPayments() {
     all:       payments?.length ?? 0,
     pending:   payments?.filter((p) => p.status === "pending").length ?? 0,
     confirmed: payments?.filter((p) => p.status === "confirmed").length ?? 0,
-    rejected:  payments?.filter((p) => p.status === "rejected").length ?? 0,
+    failed:    payments?.filter((p) => p.status === "failed").length ?? 0,
   };
 
-  // Confirm and assign payment
-  const confirmPayment = useMutation({
-    mutationFn: async (variables: {
-      paymentRequestId: string;
-      agentId: string;
-    }) => {
-      const result = await rpc.payment.confirmAndAssign(
-        variables.paymentRequestId,
-        variables.agentId,
-        "Payment confirmed by admin"
-      );
-
-      const { data: paymentRequest } = (await supabase
-        .from("payment_requests")
-        .select("*")
-        .eq("id", variables.paymentRequestId)
-        .single()) as any;
-
-      if (!paymentRequest) throw new Error("Payment request not found");
-
-      const { data: userData } = (await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", paymentRequest.user_id)
-        .single()) as any;
-
-      const { data: agentData } = (await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", variables.agentId)
-        .single()) as any;
-
-      const { data: plan } = (await supabase
-        .from("subscription_plans")
-        .select("*")
-        .eq("id", paymentRequest.plan_id)
-        .single()) as any;
-
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + (plan?.duration_days || 30));
-
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) throw new Error("No active session");
-
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-
-      // Send confirmation emails (non-fatal)
-      const emailPayloads = [
-        {
-          url: `${supabaseUrl}/functions/v1/send-payment-request`,
-          body: { userName: userData?.full_name || "User", userEmail: userData?.email, amount: plan?.amount || 0, paymentMethod: paymentRequest.payment_method, requestId: variables.paymentRequestId },
-        },
-        {
-          url: `${supabaseUrl}/functions/v1/send-payment-confirmed`,
-          body: { userEmail: userData?.email, userName: userData?.full_name || "User", amount: plan?.amount || 0, agentName: agentData?.full_name || "Agent", agentEmail: agentData?.email, expiryDate: expiryDate.toLocaleDateString() },
-        },
-        {
-          url: `${supabaseUrl}/functions/v1/send-agent-assignment`,
-          body: { agentEmail: agentData?.email, agentName: agentData?.full_name || "Agent", userName: userData?.full_name || "User", userEmail: userData?.email, assignmentDate: new Date().toLocaleDateString(), agentDashboardUrl: `${window.location.origin}/agent/dashboard` },
-        },
-      ];
-
-      for (const { url, body } of emailPayloads) {
-        try {
-          const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
-          if (!res.ok) console.error(`Email to ${url} failed (${res.status}):`, await res.text());
-        } catch (e) {
-          console.error("Email send error:", e);
-        }
-      }
-
-      return result;
+  // Approve and grant credits mutation
+  const approvePayment = useMutation({
+    mutationFn: async ({ paymentRequestId, creditsToGrant, notes }: { paymentRequestId: string; creditsToGrant: number; notes?: string }) => {
+      return rpc.payment.approveDeposit(paymentRequestId, creditsToGrant, notes);
     },
     onSuccess: () => {
-      toast.success("Payment confirmed! Emails sent to admin, user, and agent.");
+      toast.success("Payment approved and credits granted!");
       queryClient.invalidateQueries({ queryKey: ["payment", "all"] });
-      setSelectedAgent("");
-      setSelectedPaymentId(null);
+      setSelectedPayment(null);
+      setCreditsToGrant("");
+      setAdminNotes("");
       setShowConfirmDialog(false);
     },
     onError: (error: any) => {
-      toast.error(error.message || "Failed to confirm payment");
+      toast.error(error.message || "Failed to approve payment");
     },
   });
 
-  const handleConfirmClick = (paymentId: string) => {
-    setSelectedPaymentId(paymentId);
+  const handleConfirmClick = (payment: PaymentRequest) => {
+    setSelectedPayment(payment);
+    const defaultCredits = payment.amount;
+    setCreditsToGrant(defaultCredits.toString());
+    setAdminNotes("");
     setShowConfirmDialog(true);
   };
 
   const handleConfirmSubmit = () => {
-    if (!selectedPaymentId || !selectedAgent) {
-      toast.error("Please select an agent");
-      return;
+    if (!selectedPayment) return toast.error("No payment selected");
+    const creditsNum = parseInt(creditsToGrant, 10);
+    if (isNaN(creditsNum) || creditsNum <= 0) {
+      return toast.error("Please enter a valid credit amount greater than 0");
     }
-    confirmPayment.mutate({ paymentRequestId: selectedPaymentId, agentId: selectedAgent });
+    approvePayment.mutate({
+      paymentRequestId: selectedPayment.request_id,
+      creditsToGrant: creditsNum,
+      notes: adminNotes || undefined,
+    });
   };
 
   if (!user || user.role !== "admin") return null;
@@ -254,7 +166,7 @@ export default function AdminPayments() {
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center">
             <Heart className="w-4 h-4 text-white" />
           </div>
-          <h1 className="font-semibold">Payment Management</h1>
+          <h1 className="font-semibold">Deposit Management</h1>
         </div>
         <Button variant="ghost" size="icon" onClick={logout} className="text-neutral-400 hover:text-red-400 hover:bg-red-500/10">
           <LogOut className="w-5 h-5" />
@@ -262,7 +174,6 @@ export default function AdminPayments() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Page heading */}
         <div className="mb-6">
           <h2 className="text-xl font-bold">Payment History</h2>
           <p className="text-sm text-neutral-500">
@@ -272,7 +183,7 @@ export default function AdminPayments() {
 
         {/* Status filter tabs */}
         <div className="flex gap-2 mb-6 flex-wrap">
-          {(["all", "pending", "confirmed", "rejected"] as FilterStatus[]).map((tab) => (
+          {(["all", "pending", "confirmed", "failed"] as FilterStatus[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setFilter(tab)}
@@ -317,16 +228,23 @@ export default function AdminPayments() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPayments.map((p: PaymentRequest) => (
+                  {filteredPayments.map((p) => (
                     <tr key={p.request_id} className="border-b border-neutral-800/50 hover:bg-white/5">
                       <td className="p-4 text-sm text-neutral-500">#{p.request_id.slice(0, 8)}</td>
                       <td className="p-4 text-sm">
                         <p className="font-medium">{p.full_name || p.username}</p>
                         <p className="text-xs text-neutral-500">{p.email}</p>
                       </td>
-                      <td className="p-4 text-sm">{p.plan_name || "—"}</td>
-                      <td className="p-4 text-sm font-medium">${p.amount.toFixed(2)}</td>
-                      <td className="p-4 text-sm capitalize">{p.payment_method.replace("_", " ")}</td>
+                      <td className="p-4 text-sm">
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${p.plan_id ? "bg-violet-500/20 text-violet-400 border-violet-500/30" : "bg-blue-500/20 text-blue-400 border-blue-500/30"}`}>
+                          {p.plan_name}
+                        </span>
+                      </td>
+                      <td className="p-4 text-sm font-medium flex items-center gap-1">
+                        <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+                        {p.amount.toFixed(2)}
+                      </td>
+                      <td className="p-4 text-sm capitalize">{p.payment_method.replace(/_/g, " ")}</td>
                       <td className="p-4">
                         <Badge className={STATUS_COLORS[p.status] ?? "bg-neutral-500/20 text-neutral-400"}>
                           {p.status}
@@ -340,11 +258,11 @@ export default function AdminPayments() {
                           <Button
                             size="sm"
                             className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
-                            onClick={() => handleConfirmClick(p.request_id)}
-                            disabled={confirmPayment.isPending}
+                            onClick={() => handleConfirmClick(p)}
+                            disabled={approvePayment.isPending}
                           >
                             <CheckCircle className="w-3 h-3 mr-1" />
-                            Confirm
+                            Approve
                           </Button>
                         )}
                       </td>
@@ -361,54 +279,101 @@ export default function AdminPayments() {
             </p>
           </Card>
         )}
+      </div>
 
-        {/* Confirmation Dialog */}
-        <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-          <AlertDialogContent className="bg-neutral-900 border-neutral-800">
-            <AlertDialogHeader>
-              <AlertDialogTitle className="text-white">Confirm Payment & Assign Agent</AlertDialogTitle>
-              <AlertDialogDescription className="text-neutral-400">
-                Select an agent to assign to this payment. The user will be notified and the agent will receive the assignment.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+      {/* Confirm Approval Dialog */}
+      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <DialogContent className="bg-neutral-900 border-neutral-800 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-emerald-400" />
+              Approve Deposit & Grant Credits
+            </DialogTitle>
+            <DialogDescription className="text-neutral-400">
+              Confirm payment and specify the number of credits to add to the user's account.
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="space-y-4">
+          {selectedPayment && (
+            <div className="space-y-4 py-2">
+              {/* Payment summary */}
+              <div className="p-4 rounded-lg bg-neutral-800/50 border border-neutral-700 space-y-3">
+                <div className="flex justify-between">
+                  <div>
+                    <p className="text-xs text-neutral-400">User</p>
+                    <p className="font-medium text-white">{selectedPayment.full_name}</p>
+                    <p className="text-xs text-neutral-500">{selectedPayment.email}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-neutral-400">Amount</p>
+                    <p className="font-semibold text-emerald-400 text-lg">${selectedPayment.amount.toFixed(2)}</p>
+                  </div>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-neutral-700">
+                  <div>
+                    <p className="text-xs text-neutral-400">Plan</p>
+                    <p className="text-sm text-white">{selectedPayment.plan_name}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-neutral-400">Method</p>
+                    <p className="text-sm text-white capitalize">{selectedPayment.payment_method.replace(/_/g, " ")}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Credits to Grant */}
               <div>
-                <label className="text-sm font-medium text-neutral-300 block mb-2">Select Agent</label>
-                <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-                  <SelectTrigger className="bg-neutral-800/50 border-neutral-700 text-white">
-                    <SelectValue placeholder="Choose an agent..." />
-                  </SelectTrigger>
-                  <SelectContent className="bg-neutral-800 border-neutral-700">
-                    {agentsLoading ? (
-                      <SelectItem value="loading" disabled>Loading agents...</SelectItem>
-                    ) : agents && agents.length > 0 ? (
-                      agents.map((agent: Agent) => (
-                        <SelectItem key={agent.id} value={agent.id}>
-                          {agent.full_name || agent.email}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="none" disabled>No agents available</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                <label className="text-sm font-medium text-neutral-300 block mb-2">
+                  Credits to Grant <span className="text-red-400">*</span>
+                </label>
+                
+                  <input
+                    type="number"
+                    className="w-full p-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm focus:outline-none focus:border-emerald-500"
+                    value={creditsToGrant}
+                    readOnly
+                    disabled
+                  />
+                  <p className="text-xs text-neutral-500 mt-1.5">
+                    Credits are set equal to the deposit amount.
+                  </p>
+              </div>
+
+              {/* Optional admin notes */}
+              <div>
+                <label className="text-sm font-medium text-neutral-300 block mb-2">
+                  Admin Notes <span className="text-neutral-500">(optional)</span>
+                </label>
+                <textarea
+                  className="w-full p-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm resize-none focus:outline-none focus:border-emerald-500"
+                  rows={2}
+                  placeholder="Payment verified, notes..."
+                  value={adminNotes}
+                  onChange={(e) => setAdminNotes(e.target.value)}
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowConfirmDialog(false)}
+                  className="border-neutral-700 text-neutral-300 hover:text-white"
+                  disabled={approvePayment.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleConfirmSubmit}
+                  disabled={approvePayment.isPending || !creditsToGrant}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                  {approvePayment.isPending ? "Approving..." : "Approve & Grant"}
+                </Button>
               </div>
             </div>
-
-            <div className="flex gap-3 justify-end">
-              <AlertDialogCancel className="border-neutral-700 text-neutral-300 hover:text-white">Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleConfirmSubmit}
-                disabled={!selectedAgent || confirmPayment.isPending}
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                {confirmPayment.isPending ? "Confirming..." : "Confirm & Assign"}
-              </AlertDialogAction>
-            </div>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

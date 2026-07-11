@@ -45,7 +45,7 @@ export default function AdminNotifications() {
     try {
       setIsSending(true);
 
-      const { data, error } = await supabase.rpc('admin_broadcast_notification', {
+      const { data, error } = await (supabase as any).rpc('admin_broadcast_notification', {
         p_title: title.trim(),
         p_message: message.trim(),
         p_type: 'system'

@@ -1,0 +1,491 @@
+-- 20260604_credit_rpcs.sql
+-- RPC functions for credit-based payment system
+
+-- ============================================================================
+-- RPC: credit_packages_get_all
+-- Get all active credit packages
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.credit_packages_get_all()
+RETURNS TABLE (
+  id UUID,
+  credit_amount INTEGER,
+  price NUMERIC,
+  name TEXT,
+  description TEXT,
+  is_active BOOLEAN,
+  created_at TIMESTAMP
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    cp.id,
+    cp.credit_amount,
+    cp.price,
+    cp.name,
+    cp.description,
+    cp.is_active,
+    cp.created_at
+  FROM public.credit_packages cp
+  WHERE cp.is_active = TRUE
+  ORDER BY cp.price ASC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- RPC: admin_settings_get
+-- Get current admin settings (message rate + minimum deposit)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.admin_settings_get()
+RETURNS TABLE (
+  id UUID,
+  message_cost_rate DECIMAL,
+  minimum_deposit_amount DECIMAL
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    s.id,
+    s.message_cost_rate,
+    s.minimum_deposit_amount
+  FROM public.admin_settings s
+  ORDER BY s.created_at DESC
+  LIMIT 1;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- RPC: admin_settings_update
+-- Admin updates message cost rate and/or minimum deposit
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.admin_settings_update(
+  p_message_cost_rate DECIMAL DEFAULT NULL,
+  p_minimum_deposit_amount DECIMAL DEFAULT NULL
+)
+RETURNS jsonb AS $$
+DECLARE
+  v_result jsonb;
+BEGIN
+  -- Check admin role
+  IF NOT EXISTS (
+    SELECT 1 FROM public.user_profiles 
+    WHERE user_profiles.id = auth.uid() AND user_profiles.role = 'admin'
+  ) THEN
+    RAISE EXCEPTION 'Only admins can update settings';
+  END IF;
+
+  -- Update settings (non-null values only)
+  UPDATE public.admin_settings
+  SET 
+    message_cost_rate = COALESCE(p_message_cost_rate, message_cost_rate),
+    minimum_deposit_amount = COALESCE(p_minimum_deposit_amount, minimum_deposit_amount),
+    updated_at = now()
+  WHERE id = (SELECT id FROM public.admin_settings ORDER BY created_at DESC LIMIT 1)
+  RETURNING jsonb_build_object(
+    'id', id,
+    'message_cost_rate', message_cost_rate,
+    'minimum_deposit_amount', minimum_deposit_amount,
+    'updated_at', updated_at
+  ) INTO v_result;
+
+  RETURN COALESCE(v_result, jsonb_build_object('error', 'Failed to update settings'));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- RPC: user_credits_get_balance
+-- Get current user's credit balance
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.user_credits_get_balance()
+RETURNS jsonb AS $$
+DECLARE
+  v_balance DECIMAL;
+  v_result jsonb;
+BEGIN
+  SELECT uc.balance INTO v_balance
+  FROM public.user_credits uc
+  WHERE uc.user_id = auth.uid();
+
+  IF v_balance IS NULL THEN
+    -- Create entry if not exists
+    INSERT INTO public.user_credits (user_id, balance, total_purchased)
+    VALUES (auth.uid(), 0.00, 0.00)
+    ON CONFLICT (user_id) DO NOTHING;
+    v_balance := 0.00;
+  END IF;
+
+  v_result := jsonb_build_object(
+    'balance', v_balance,
+    'formatted', CONCAT(ROUND(v_balance::NUMERIC, 2), ' credits')
+  );
+
+  RETURN v_result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- RPC: credit_transaction_log
+-- Log a credit transaction (deposit, deduction, etc.)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.credit_transaction_log(
+  p_user_id UUID,
+  p_type TEXT,
+  p_amount DECIMAL,
+  p_reason TEXT DEFAULT NULL
+)
+RETURNS UUID AS $$
+DECLARE
+  v_transaction_id UUID;
+BEGIN
+  -- Validate type
+  IF p_type NOT IN ('deposit', 'message_deduction', 'admin_adjustment', 'refund', 'migration') THEN
+    RAISE EXCEPTION 'Invalid transaction type: %', p_type;
+  END IF;
+
+  -- Insert transaction
+  INSERT INTO public.credit_transactions (user_id, type, amount, reason)
+  VALUES (p_user_id, p_type, p_amount, p_reason)
+  RETURNING id INTO v_transaction_id;
+
+  RETURN v_transaction_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- RPC: payment_approve_deposit
+-- Admin approves a deposit and grants credits to user
+-- Creates conversations with all active agents and sends auto-greetings
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.payment_approve_deposit(p_request_id UUID)
+RETURNS jsonb AS $$
+DECLARE
+  v_user_id UUID;
+  v_credits INTEGER;
+  v_amount NUMERIC;
+  v_agent_id BIGINT;
+  v_agent_user_id UUID;
+  v_agent_name TEXT;
+  v_conversation_id BIGINT;
+  v_agent_cursor CURSOR FOR
+    SELECT a.id, ap.user_id, ap.full_name
+    FROM public.agents a
+    JOIN public.user_profiles ap ON a.user_id = ap.id
+    WHERE ap.status = 'active' AND ap.role = 'agent';
+  v_result jsonb;
+BEGIN
+  -- Check admin role
+  IF NOT EXISTS (
+    SELECT 1 FROM public.user_profiles 
+    WHERE user_profiles.id = auth.uid() AND user_profiles.role = 'admin'
+  ) THEN
+    RAISE EXCEPTION 'Only admins can approve deposits';
+  END IF;
+
+  -- Get payment request details
+  SELECT pr.user_id, pr.credits_to_grant, pr.amount
+  INTO v_user_id, v_credits, v_amount
+  FROM public.payment_requests pr
+  WHERE pr.id = p_request_id AND pr.status = 'pending';
+
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Payment request not found or already processed';
+  END IF;
+
+  -- Update payment request status
+  UPDATE public.payment_requests
+  SET 
+    status = 'confirmed',
+    confirmed_at = now(),
+    confirmed_by_admin_id = auth.uid()
+  WHERE id = p_request_id;
+
+  -- Ensure user_credits entry exists
+  INSERT INTO public.user_credits (user_id, balance, total_purchased)
+  VALUES (v_user_id, v_credits::DECIMAL, v_amount)
+  ON CONFLICT (user_id) DO UPDATE
+  SET 
+    balance = user_credits.balance + v_credits::DECIMAL,
+    total_purchased = user_credits.total_purchased + v_amount,
+    updated_at = now();
+
+  -- Log deposit transaction
+  PERFORM public.credit_transaction_log(
+    v_user_id,
+    'deposit',
+    v_amount,
+    CONCAT('Deposit approved - ', v_credits, ' credits granted')
+  );
+
+  -- Create conversations with all active agents and send auto-greetings
+  OPEN v_agent_cursor;
+  LOOP
+    FETCH v_agent_cursor INTO v_agent_id, v_agent_user_id, v_agent_name;
+    EXIT WHEN NOT FOUND;
+
+    -- Create conversation with agent
+    INSERT INTO public.conversations (user_id, agent_id, status, admin_approved, welcome_message_sent)
+    VALUES (v_user_id, v_agent_id, 'active', TRUE, FALSE)
+    ON CONFLICT DO NOTHING
+    RETURNING id INTO v_conversation_id;
+
+    -- If conversation was created, insert auto-greeting message
+    IF v_conversation_id IS NOT NULL THEN
+      INSERT INTO public.messages (
+        conversation_id,
+        sender_id,
+        sender_role,
+        type,
+        content,
+        created_at
+      )
+      VALUES (
+        v_conversation_id,
+        v_agent_user_id,
+        'agent',
+        'text',
+        CONCAT('Hi ', (SELECT full_name FROM public.user_profiles WHERE id = v_user_id LIMIT 1), '! I''m ', v_agent_name, '. How can I help you today?'),
+        now()
+      );
+
+      -- Mark welcome message as sent
+      UPDATE public.conversations
+      SET welcome_message_sent = TRUE
+      WHERE id = v_conversation_id;
+    END IF;
+  END LOOP;
+  CLOSE v_agent_cursor;
+
+  v_result := jsonb_build_object(
+    'success', TRUE,
+    'userId', v_user_id,
+    'creditsGranted', v_credits,
+    'message', CONCAT('Deposit approved! ', v_credits, ' credits added.')
+  );
+
+  RETURN v_result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- RPC: payment_create_request
+-- User initiates a credit deposit request
+-- Validates against minimum deposit amount from admin settings
+-- ============================================================================
+DROP FUNCTION IF EXISTS public.payment_create_request(UUID, TEXT) CASCADE;
+
+CREATE OR REPLACE FUNCTION public.payment_create_request(
+  p_credit_package_id UUID,
+  p_payment_method TEXT
+)
+RETURNS jsonb AS $$
+DECLARE
+  v_package RECORD;
+  v_min_deposit DECIMAL;
+  v_request_id UUID;
+  v_result jsonb;
+BEGIN
+  -- Get credit package
+  SELECT cp.id, cp.credit_amount, cp.price
+  INTO v_package
+  FROM public.credit_packages cp
+  WHERE cp.id = p_credit_package_id AND cp.is_active = TRUE;
+
+  IF v_package.id IS NULL THEN
+    RAISE EXCEPTION 'Credit package not found or inactive';
+  END IF;
+
+  -- Get minimum deposit amount
+  SELECT s.minimum_deposit_amount INTO v_min_deposit
+  FROM public.admin_settings s
+  ORDER BY s.created_at DESC
+  LIMIT 1;
+
+  -- Validate package price >= minimum
+  IF v_package.price < COALESCE(v_min_deposit, 29.99) THEN
+    RAISE EXCEPTION 'Package price (%) is below minimum deposit amount (%)', 
+      v_package.price, v_min_deposit;
+  END IF;
+
+  -- Validate payment method
+  IF p_payment_method NOT IN ('bank_transfer', 'paypal', 'crypto', 'coinhub', 'apple_pay', 'cashapp', 'venmo', 'credit_card', 'other') THEN
+    RAISE EXCEPTION 'Invalid payment method: %', p_payment_method;
+  END IF;
+
+  -- Create payment request
+  INSERT INTO public.payment_requests (
+    user_id,
+    plan_id,
+    payment_method,
+    amount,
+    credits_to_grant,
+    status,
+    requested_at
+  )
+  VALUES (
+    auth.uid(),
+    p_credit_package_id,
+    p_payment_method,
+    v_package.price,
+    v_package.credit_amount,
+    'pending',
+    now()
+  )
+  RETURNING id INTO v_request_id;
+
+  v_result := jsonb_build_object(
+    'requestId', v_request_id,
+    'userId', auth.uid(),
+    'creditAmount', v_package.credit_amount,
+    'amount', v_package.price,
+    'paymentMethod', p_payment_method,
+    'status', 'pending',
+    'message', 'Payment request created. Admin will review and contact you via email.'
+  );
+
+  RETURN v_result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- RPC: user_send_message
+-- Send a message and deduct credits from user's balance
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.user_send_message(
+  p_conversation_id BIGINT,
+  p_content TEXT DEFAULT NULL,
+  p_media_url TEXT DEFAULT NULL,
+  p_duration INTEGER DEFAULT NULL,
+  p_type TEXT DEFAULT 'text'
+)
+RETURNS jsonb AS $$
+DECLARE
+  v_balance DECIMAL;
+  v_cost DECIMAL;
+  v_message_id BIGINT;
+  v_new_balance DECIMAL;
+  v_result jsonb;
+BEGIN
+  -- Get user's current balance
+  SELECT uc.balance INTO v_balance
+  FROM public.user_credits uc
+  WHERE uc.user_id = auth.uid();
+
+  IF v_balance IS NULL THEN
+    RAISE EXCEPTION 'User credits not found';
+  END IF;
+
+  -- Get message cost from admin settings
+  SELECT s.message_cost_rate INTO v_cost
+  FROM public.admin_settings s
+  ORDER BY s.created_at DESC
+  LIMIT 1;
+
+  v_cost := COALESCE(v_cost, 5.00);
+
+  -- Check if user has sufficient balance
+  IF v_balance < v_cost THEN
+    RAISE EXCEPTION 'Insufficient credits. You have % credits but need % to send a message.', 
+      ROUND(v_balance::NUMERIC, 2), v_cost;
+  END IF;
+
+  -- Insert message
+  INSERT INTO public.messages (
+    conversation_id,
+    sender_id,
+    sender_role,
+    type,
+    content,
+    media_url,
+    duration,
+    created_at
+  )
+  VALUES (
+    p_conversation_id,
+    auth.uid(),
+    'user',
+    p_type,
+    p_content,
+    p_media_url,
+    p_duration,
+    now()
+  )
+  RETURNING id INTO v_message_id;
+
+  -- Deduct credits from user's balance
+  UPDATE public.user_credits
+  SET 
+    balance = balance - v_cost,
+    updated_at = now()
+  WHERE user_id = auth.uid()
+  RETURNING balance INTO v_new_balance;
+
+  -- Log deduction transaction
+  PERFORM public.credit_transaction_log(
+    auth.uid(),
+    'message_deduction',
+    -v_cost,
+    CONCAT('Message sent in conversation ', p_conversation_id)
+  );
+
+  v_result := jsonb_build_object(
+    'messageId', v_message_id,
+    'costDeducted', v_cost,
+    'newBalance', ROUND(v_new_balance::NUMERIC, 2),
+    'message', CONCAT('Message sent. Remaining balance: ', ROUND(v_new_balance::NUMERIC, 2), ' credits')
+  );
+
+  RETURN v_result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- RPC: credit_transactions_get_user
+-- Get credit transaction history for current user
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.credit_transactions_get_user()
+RETURNS TABLE (
+  id UUID,
+  type TEXT,
+  amount DECIMAL,
+  reason TEXT,
+  created_at TIMESTAMP
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    ct.id,
+    ct.type,
+    ct.amount,
+    ct.reason,
+    ct.created_at
+  FROM public.credit_transactions ct
+  WHERE ct.user_id = auth.uid()
+  ORDER BY ct.created_at DESC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- RPC: agent_profiles_get_all
+-- Get all agent profiles (name, photo, bio)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.agent_profiles_get_all()
+RETURNS TABLE (
+  id UUID,
+  agent_id BIGINT,
+  display_name VARCHAR,
+  profile_photo TEXT,
+  bio TEXT,
+  created_at TIMESTAMP
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    ap.id,
+    ap.agent_id,
+    ap.display_name,
+    ap.profile_photo,
+    ap.bio,
+    ap.created_at
+  FROM public.agent_profiles ap
+  ORDER BY ap.display_name ASC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;

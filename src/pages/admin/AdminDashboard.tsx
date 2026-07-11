@@ -16,6 +16,8 @@ export default function AdminDashboard() {
     queryKey: ['admin', 'dashboardStats'],
     queryFn: () => rpc.admin.dashboardStats(),
     enabled: user?.role === 'admin',
+    staleTime: 30 * 1000, // 30 seconds - dashboard stats don't change often
+    gcTime: 10 * 60 * 1000, // 10 minutes
   });
 
   if (!user || user.role !== "admin") return null;

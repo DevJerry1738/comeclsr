@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useEffect, useState, useRef } from "react";
+import { createContext, useContext, useCallback, useMemo, useEffect, useState, useRef, createElement } from "react";
+import type { ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { useSessionContext } from "@supabase/auth-helpers-react";
 
@@ -13,110 +14,110 @@ export interface AuthUser {
   [key: string]: any;
 }
 
-export function useAuth() {
+interface AuthContextType {
+  user: AuthUser | null;
+  isAuthenticated: boolean;
+  isAdmin: boolean;
+  isAgent: boolean;
+  isLoading: boolean;
+  error: Error | null;
+  logout: () => Promise<void>;
+  refresh: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const { session, isLoading: sessionLoading } = useSessionContext();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const isMountedRef = useRef(true);
+  const fetchedUserIdRef = useRef<string | null>(null);
+
+  const fetchProfile = useCallback(async (userId: string, email: string, metadata: any) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // Fetch full profile from user_profiles table
+      const { data: profile, error: profileError } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (profileError && profileError.code !== 'PGRST116') {
+        console.error("Error fetching profile:", profileError);
+        setError(profileError as any);
+        // Don't clear user on profile fetch failure - auth is still valid
+        // Create a minimal user object from auth data
+        setUser({
+          id: userId,
+          email: email,
+          full_name: metadata?.full_name || "",
+          role: "user",
+          status: "active",
+        } as AuthUser);
+        return;
+      }
+
+      if (!profile) {
+        console.warn("No profile found for user:", userId);
+        // User exists in auth but no profile - create minimal user object
+        setUser({
+          id: userId,
+          email: email,
+          full_name: metadata?.full_name || "",
+          role: "user",
+          status: "active",
+        } as AuthUser);
+        return;
+      }
+
+      setUser(profile as AuthUser);
+      fetchedUserIdRef.current = userId;
+    } catch (err: any) {
+      console.error("Auth error in fetchProfile:", err);
+      setError(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    isMountedRef.current = true;
+    if (sessionLoading) {
+      setIsLoading(true);
+      return;
+    }
 
-    const fetchUser = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
+    if (!session?.user?.id) {
+      setUser(null);
+      fetchedUserIdRef.current = null;
+      setIsLoading(false);
+      return;
+    }
 
-        // Always check Supabase storage for session, even if context hasn't loaded yet
-        const { data: { session: storedSession } } = await supabase.auth.getSession();
-        let activeSession = session || storedSession;
-
-        if (!activeSession?.user?.id) {
-          setUser(null);
-          setIsLoading(false);
-          return;
-        }
-
-        // Validate session is still valid by checking refresh
-        const { error: refreshError } = await supabase.auth.refreshSession();
-        if (refreshError) {
-          console.warn("Session refresh failed:", refreshError);
-          // Don't set user to null, just continue with existing session
-        }
-
-        // Fetch full profile from user_profiles table
-        const { data: profile, error: profileError } = await supabase
-          .from("user_profiles")
-          .select("*")
-          .eq("id", activeSession.user.id)
-          .maybeSingle();
-
-        if (profileError && profileError.code !== 'PGRST116') {
-          console.error("Error fetching profile:", profileError);
-          setError(profileError);
-          // Don't clear user on profile fetch failure - auth is still valid
-          // Create a minimal user object from auth data
-          if (isMountedRef.current) {
-            setUser({
-              id: activeSession.user.id,
-              email: activeSession.user.email || "",
-              full_name: activeSession.user.user_metadata?.full_name || "",
-              role: "user",
-              status: "active",
-            } as AuthUser);
-          }
-          return;
-        }
-
-        if (!profile) {
-          console.warn("No profile found for user:", activeSession.user.id);
-          // User exists in auth but no profile - create minimal user object
-          if (isMountedRef.current) {
-            setUser({
-              id: activeSession.user.id,
-              email: activeSession.user.email || "",
-              full_name: activeSession.user.user_metadata?.full_name || "",
-              role: "user",
-              status: "active",
-            } as AuthUser);
-          }
-          return;
-        }
-
-        if (isMountedRef.current) {
-          setUser(profile as AuthUser);
-        }
-      } catch (err: any) {
-        console.error("Auth error:", err);
-        if (isMountedRef.current) {
-          setError(err);
-          // Don't set user to null - keep them authenticated if possible
-        }
-      } finally {
-        if (isMountedRef.current) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    fetchUser();
-
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, [session?.user?.id]);
+    // Only fetch if session user id has changed
+    if (session.user.id !== fetchedUserIdRef.current) {
+      fetchProfile(
+        session.user.id,
+        session.user.email || "",
+        session.user.user_metadata
+      );
+    } else {
+      setIsLoading(false);
+    }
+  }, [session, sessionLoading, fetchProfile]);
 
   const logout = useCallback(async () => {
     try {
       await supabase.auth.signOut();
       setUser(null);
-      // Use navigate if available, otherwise use window.location
+      fetchedUserIdRef.current = null;
       window.location.href = "/";
     } catch (err: any) {
       console.error("Logout error:", err);
       setError(err);
-      // Still navigate even if signOut fails
       window.location.href = "/";
     }
   }, []);
@@ -134,7 +135,7 @@ export function useAuth() {
     }
   }, [session?.user?.id]);
 
-  return useMemo(
+  const value = useMemo(
     () => ({
       user,
       isAuthenticated: !!user,
@@ -145,6 +146,16 @@ export function useAuth() {
       logout,
       refresh,
     }),
-    [user, sessionLoading, isLoading, error, logout, refresh],
+    [user, sessionLoading, isLoading, error, logout, refresh]
   );
+
+  return createElement(AuthContext.Provider, { value }, children);
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
 }

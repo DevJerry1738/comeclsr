@@ -1,0 +1,37 @@
+-- Storage bucket setup for agent profile photos
+-- This migration documents the required storage bucket configuration
+-- NOTE: Storage bucket policies must be set via the Supabase Dashboard UI
+-- because they are not directly configurable via SQL
+
+-- If the profile-photos bucket doesn't exist, you'll need to create it manually:
+-- 1. Go to Supabase Dashboard > Storage
+-- 2. Click "Create a new bucket"
+-- 3. Name: "profile-photos"
+-- 4. Privacy: Public (so uploaded photos can be viewed)
+-- 5. Click Create
+
+-- Storage bucket policies (Set in Dashboard > Storage > profile-photos > Policies):
+-- 
+-- Policy 1: Allow authenticated users to upload to their own paths
+-- Target roles: authenticated
+-- Allowed operations: INSERT
+-- Using expression: auth.role() = 'authenticated'
+-- 
+-- Policy 2: Allow authenticated users to read all uploaded files
+-- Target roles: authenticated, anon
+-- Allowed operations: SELECT
+-- Using expression: true
+-- 
+-- Policy 3: Allow authenticated users to delete their own files
+-- Target roles: authenticated
+-- Allowed operations: DELETE
+-- Using expression: auth.role() = 'authenticated'
+--
+-- Policy 4: Allow authenticated users to update their own files
+-- Target roles: authenticated
+-- Allowed operations: UPDATE
+-- Using expression: auth.role() = 'authenticated'
+
+-- The upload-agent-photo edge function uses the service role key to bypass
+-- these policies when an admin uploads a photo, so these policies just need
+-- to allow authenticated users in general.

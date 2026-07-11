@@ -13,6 +13,8 @@ export default function AdminKyc() {
     queryKey: ['kyc', 'all'],
     queryFn: () => rpc.kyc.getAll() || Promise.resolve([]),
     enabled: user?.role === 'admin',
+    staleTime: 10 * 1000, // 10 seconds
+    gcTime: 5 * 60 * 1000, // 5 minutes
   });
 
   const getStatusColor = (status: string) => {

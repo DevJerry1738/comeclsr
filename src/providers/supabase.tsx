@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionContextProvider, type Session } from '@supabase/auth-helpers-react';
 import { supabase } from '@/lib/supabase';
+import { AuthProvider } from '@/hooks/useAuth';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,11 +47,12 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
     );
   }
 
-  // Only use supabaseClient, remove the session prop
   return (
     <QueryClientProvider client={queryClient}>
       <SessionContextProvider supabaseClient={supabase}>
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </SessionContextProvider>
     </QueryClientProvider>
   );

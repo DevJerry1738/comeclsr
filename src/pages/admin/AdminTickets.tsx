@@ -18,6 +18,8 @@ export default function AdminTickets() {
     queryKey: ['tickets', 'all'],
     queryFn: () => rpc.ticket.allTickets?.() || Promise.resolve([]),
     enabled: user?.role === 'admin',
+    staleTime: 10 * 1000, // 10 seconds
+    gcTime: 5 * 60 * 1000, // 5 minutes
   });
 
   const reply = useMutation({

@@ -19,22 +19,92 @@ export default function Dashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [myTickets, setMyTickets] = useState<any[]>([]);
-  const [unreadMessages, setUnreadMessages] = useState<number>(0);
-  const [loading, setLoading] = useState(true);
-
   const activeTab = searchParams.get("tab") || "home";
 
-  // Fetch subscription status
-  const { data: subscriptionStatus, isLoading: subscriptionLoading } = useQuery({
+  // Fetch credit balance with aggressive caching
+  const { data: creditBalance, isLoading: creditLoading, isError: creditError } = useQuery({
+    queryKey: ["user_credits", "balance", user?.id],
+    queryFn: () => rpc.payment.getUserCreditsBalance(),
+    enabled: !!user?.id,
+    retry: 1,
+    retryDelay: 500,
+    staleTime: 15 * 1000, // 15 seconds
+    gcTime: 10 * 60 * 1000, // 10 minutes
+  });
+
+  // Keep subscription status for backward compatibility (aggressive caching)
+  const { data: subscriptionStatus, isLoading: subscriptionLoading, isError: subscriptionError } = useQuery({
     queryKey: ["subscription", "userStatus", user?.id],
     queryFn: () => rpc.payment.getUserStatus(),
     enabled: !!user?.id,
+    retry: 1,
+    retryDelay: 500,
+    staleTime: 2 * 60 * 1000, // 2 minutes - aggressive caching
+    gcTime: 10 * 60 * 1000, // 10 minutes
   });
 
   // Fetch pending payment status (shared state with Subscribe page)
   const { data: hasPendingPayment } = usePendingPayment(user?.id);
+
+  // Fetch unread notifications
+  const { data: notificationsData } = useQuery({
+    queryKey: ["notifications", "unread", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", user!.id)
+        .eq("is_read", false)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user?.id,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  // Fetch tickets (uses same key as Tickets.tsx for instant cache sharing!)
+  const { data: myTicketsData } = useQuery({
+    queryKey: ['tickets', 'my'],
+    queryFn: () => rpc.ticket.myTickets(),
+    enabled: !!user?.id,
+    staleTime: 10 * 1000,
+    gcTime: 3 * 60 * 1000,
+  });
+
+  // Fetch unread messages count
+  const { data: unreadMessagesCount } = useQuery({
+    queryKey: ["messages", "unreadCount", user?.id],
+    queryFn: async () => {
+      const { data: convos, error: convosError } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("user_id", user!.id);
+      
+      if (convosError) throw convosError;
+      if (!convos || convos.length === 0) return 0;
+      
+      const convoIds = convos.map((c: any) => c.id);
+      const { count, error: countError } = await supabase
+        .from("messages")
+        .select("*", { count: "exact", head: true })
+        .in("conversation_id", convoIds)
+        .neq("sender_role", "user")
+        .eq("is_read", false);
+      
+      if (countError) throw countError;
+      return count || 0;
+    },
+    enabled: !!user?.id,
+    staleTime: 10 * 1000,
+    gcTime: 3 * 60 * 1000,
+  });
+
+  const notifications = notificationsData || [];
+  const myTickets = myTicketsData || [];
+  const unreadMessages = unreadMessagesCount || 0;
 
   // Redirect admin users to admin dashboard
   useEffect(() => {
@@ -43,54 +113,6 @@ export default function Dashboard() {
       navigate("/admin", { replace: true });
     }
   }, [user?.role, navigate]);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!user?.id) return;
-      try {
-        setLoading(true);
-        const { data: notif } = await supabase
-          .from("notifications")
-          .select("*")
-          .eq("user_id", user.id)
-          .eq("is_read", false)
-          .order("created_at", { ascending: false })
-          .limit(5);
-        setNotifications(notif || []);
-
-        const { data: tickets } = await supabase
-          .from("tickets")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false });
-        setMyTickets(tickets || []);
-
-        // Fetch unread messages count
-        const { data: convos } = await supabase
-          .from("conversations")
-          .select("id")
-          .eq("user_id", user.id);
-        
-        if (convos && convos.length > 0) {
-          const convoIds = convos.map((c: any) => c.id);
-          const { count } = await supabase
-            .from("messages")
-            .select("*", { count: "exact", head: true })
-            .in("conversation_id", convoIds)
-            .neq("sender_role", "user")
-            .eq("is_read", false);
-          
-          setUnreadMessages(count || 0);
-        }
-      } catch (err) {
-        console.error("Error fetching dashboard data:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [user?.id]);
 
   const getDaysRemaining = (expiresAt: string | null) => {
     if (!expiresAt) return null;
@@ -131,7 +153,7 @@ export default function Dashboard() {
         <div className="bg-white/[0.03] backdrop-blur-xl border border-white/5 rounded-2xl p-6">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
-              <AvatarRing name={user.full_name || user.email} size="lg" />
+              <AvatarRing name={user.full_name || user.email} size="lg" imageUrl={user.profile_photo} />
               <div>
                 <h2 className="font-semibold text-lg">{user.full_name || user.email}</h2>
                 <p className="text-neutral-400 text-sm">{user.email}</p>
@@ -144,16 +166,16 @@ export default function Dashboard() {
             </Link>
           </div>
 
-          {/* Status line */}
+          {/* Status line - Credit Balance */}
           <div className="mt-4 flex items-center gap-3">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-emerald-500" />
               <span className="text-sm text-neutral-300">Active</span>
             </div>
-            {daysLeft !== null && daysLeft > 0 && (
+            {creditBalance?.balance !== undefined && (
               <div className="flex items-center gap-2">
-                <Zap className="w-4 h-4 text-amber-400" />
-                <span className="text-sm text-neutral-300">{daysLeft} days left</span>
+                <Zap className="w-4 h-4 text-rose-400" />
+                <span className="text-sm text-neutral-300">{Math.floor(creditBalance.balance)} credits</span>
               </div>
             )}
           </div>
@@ -190,17 +212,56 @@ export default function Dashboard() {
               <span className="text-sm font-medium">{myTickets.length}</span>
             </button>
 
-            {subscriptionStatus?.status === "active" && (
-              <div className="flex items-center gap-2 min-w-max px-4 py-3 rounded-full bg-emerald-500/10 border border-emerald-500/30">
-                <CheckCircle className="w-4 h-4 text-emerald-400" />
-                <span className="text-sm font-medium">KYC OK</span>
+            {creditBalance?.balance !== undefined && creditBalance.balance > 0 && (
+              <div className="flex items-center gap-2 min-w-max px-4 py-3 rounded-full bg-rose-500/10 border border-rose-500/30">
+                <Zap className="w-4 h-4 text-rose-400" />
+                <span className="text-sm font-medium">{Math.floor(creditBalance.balance)} Credits</span>
               </div>
             )}
           </div>
         </div>
 
-        {/* === SUBSCRIPTION BANNER: 3 states === */}
-        {subscriptionStatus?.status !== "active" && hasPendingPayment && (
+        {/* === CREDIT BALANCE CARD === */}
+        {creditBalance?.balance !== undefined && (
+          <div className={`${
+            creditBalance.balance > 5
+              ? "bg-gradient-to-r from-rose-500/20 to-pink-600/20 border-rose-500/30"
+              : "bg-gradient-to-r from-amber-500/20 to-orange-600/20 border-amber-500/30"
+          } rounded-2xl p-4 border`}>
+            <div className="flex items-start gap-3">
+              <Zap className={`w-5 h-5 flex-shrink-0 mt-0.5 ${creditBalance.balance > 5 ? "text-rose-400" : "text-amber-400"}`} />
+              <div className="flex-1">
+                <h3 className={`font-semibold ${creditBalance.balance > 5 ? "text-rose-300" : "text-amber-300"}`}>
+                  {creditBalance.balance > 0 ? `${Math.floor(creditBalance.balance)} Credits Available` : "Out of Credits"}
+                </h3>
+                {creditBalance.balance > 0 && creditBalance.balance <= 5 && (
+                  <p className="text-sm text-neutral-300 mt-1">
+                    You have low credits. Add more to continue chatting.
+                  </p>
+                )}
+                {creditBalance.balance === 0 && (
+                  <p className="text-sm text-neutral-300 mt-1">
+                    Add credits to start chatting with your favorites.
+                  </p>
+                )}
+                <Link to="/deposit">
+                  <Button
+                    className={`mt-3 h-auto px-4 ${
+                      creditBalance.balance > 5
+                        ? "bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700"
+                        : "bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700"
+                    }`}
+                  >
+                    {creditBalance.balance > 0 ? "Add More Credits" : "Buy Credits Now"}
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Pending Payment Banner */}
+        {hasPendingPayment && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4">
             <div className="flex items-start gap-3">
               <div className="mt-0.5 flex-none">
@@ -209,38 +270,17 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-amber-300">Subscription Request Pending</h3>
+                <h3 className="font-semibold text-amber-300">Deposit Request Pending</h3>
                 <p className="text-sm text-neutral-300 mt-1">
-                  Your payment request is under review. We'll notify you once confirmed by our team.
+                  Your deposit is under review. Admin will contact you soon with payment details.
                 </p>
                 <Button
-                  onClick={() => navigate("/dashboard?tab=subscription")}
+                  onClick={() => navigate("/dashboard?tab=credits")}
                   variant="ghost"
                   className="mt-3 text-amber-400 hover:text-amber-300 hover:bg-amber-500/20 h-auto px-0 text-sm"
                 >
                   View Status →
                 </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {subscriptionStatus?.status !== "active" && !hasPendingPayment && (
-          <div className="bg-gradient-to-r from-rose-500/20 to-pink-600/20 border border-rose-500/30 rounded-2xl p-4">
-            <div className="flex items-start gap-3">
-              <Zap className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <h3 className="font-semibold text-rose-300">Unlock Full Access</h3>
-                <p className="text-sm text-neutral-300 mt-1">
-                  Subscribe to ComeClsr and get matched with your soulmate.
-                </p>
-                <Link to="/subscribe">
-                  <Button
-                    className="mt-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 h-auto px-4"
-                  >
-                    Subscribe Now
-                  </Button>
-                </Link>
               </div>
             </div>
           </div>
@@ -266,16 +306,14 @@ export default function Dashboard() {
             </button>
           </Link>
 
-          <Link to="/dashboard?tab=subscription">
+          <Link to="/deposit">
             <button className="w-full bg-surface-1 border border-surface-3 rounded-2xl p-4 flex items-center justify-between active:scale-[0.99] transition-transform hover:border-surface-2">
               <div className="flex items-center gap-3">
-                <Zap className="w-5 h-5 text-amber-400" />
+                <Zap className="w-5 h-5 text-rose-400" />
                 <div className="text-left">
-                  <p className="font-semibold">Subscription</p>
+                  <p className="font-semibold">Credits</p>
                   <p className="text-xs text-neutral-400">
-                    {subscriptionStatus?.status === "active"
-                      ? (daysLeft !== null ? `${daysLeft} days remaining · Pro` : "Active · Pro")
-                      : "Pending activation"}
+                    {creditBalance?.balance ? `${Math.floor(creditBalance.balance)} available` : "Buy credits to chat"}
                   </p>
                 </div>
               </div>

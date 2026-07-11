@@ -29,6 +29,7 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [signupEmail, setSignupEmail] = useState(""); // Store email for confirmation screen
   const [signupSuccess, setSignupSuccess] = useState(false); // Show confirmation screen
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -75,6 +76,7 @@ export default function Register() {
         return;
       }
 
+      setPhotoFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setProfilePhotoPreview(reader.result as string);
@@ -85,6 +87,7 @@ export default function Register() {
 
   const removePhoto = () => {
     setProfilePhotoPreview(null);
+    setPhotoFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -208,6 +211,39 @@ export default function Register() {
       // Small delay to ensure session propagation and trigger execution
       await new Promise(resolve => setTimeout(resolve, 300));
 
+      // Upload profile photo if provided
+      let photoUrl: string | null = null;
+      if (photoFile) {
+        try {
+          const file = photoFile;
+          const filePath = `${authData.user.id}/photo`;
+
+          // Upload file to Supabase Storage
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('profile-photos')
+            .upload(filePath, file, { upsert: true });
+
+          if (uploadError) {
+            console.error("Photo upload error:", uploadError);
+            toast.error("Failed to upload profile photo");
+            setIsLoading(false);
+            return;
+          }
+
+          // Get public URL for the uploaded file
+          const { data: urlData } = supabase.storage
+            .from('profile-photos')
+            .getPublicUrl(filePath);
+
+          photoUrl = urlData?.publicUrl || null;
+        } catch (photoErr: any) {
+          console.error("Photo upload exception:", photoErr);
+          toast.error("Failed to upload profile photo");
+          setIsLoading(false);
+          return;
+        }
+      }
+
       // Update profile with additional fields using database function
       try {
         const { error: profileError } = await supabase.rpc("update_user_profile", {
@@ -218,7 +254,7 @@ export default function Register() {
           p_location: formData.location || null,
           p_bio: formData.bio || null,
           p_interests: formData.interests || null,
-          p_profile_photo: profilePhotoPreview || null,
+          p_profile_photo: photoUrl || null,
         } as any);
 
         if (profileError) {
@@ -253,6 +289,7 @@ export default function Register() {
         confirmPassword: "",
       });
       setProfilePhotoPreview(null);
+      setPhotoFile(null);
       setCurrentStep(1);
       setShowPassword(false);
       setShowConfirmPassword(false);

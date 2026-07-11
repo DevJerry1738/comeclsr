@@ -1,324 +1,212 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabase";
+import { rpc } from "@/lib/rpc";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "react-router";
 import { toast } from "sonner";
-import { ArrowLeft, Heart, LogOut, DollarSign } from "lucide-react";
-
-interface SubscriptionPlan {
-  id: string;
-  name: string;
-  amount: number;
-  duration_days: number;
-  is_active: boolean;
-}
+import { ArrowLeft, Heart, LogOut, DollarSign, Zap } from "lucide-react";
 
 export default function AdminSettings() {
   const { user, logout } = useAuth();
   const queryClient = useQueryClient();
-  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-  const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
-  const [newPlanForm, setNewPlanForm] = useState({ name: "Standard Plan", amount: 99.99, duration_days: 30 });
+  
+  // Credit settings state
+  const [creditSettings, setCreditSettings] = useState({ 
+    messageCostRate: 5.00, 
+    minimumDepositAmount: 29.99 
+  });
 
-  // Fetch subscription plans
-  const { data: subscriptionPlans, isLoading } = useQuery({
-    queryKey: ["subscription_plans"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("subscription_plans")
-        .select("*")
-        .order("created_at", { ascending: false });
-      return data as SubscriptionPlan[];
-    },
+  // Fetch credit settings
+  const { data: adminSettings, isLoading: settingsLoading } = useQuery({
+    queryKey: ["admin_settings"],
+    queryFn: () => rpc.settings.getAdminSettings(),
     enabled: user?.role === "admin",
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
   });
 
   useEffect(() => {
-    if (subscriptionPlans) {
-      setPlans(subscriptionPlans);
+    if (adminSettings) {
+      setCreditSettings({
+        messageCostRate: adminSettings.message_cost_rate || 5.00,
+        minimumDepositAmount: adminSettings.minimum_deposit_amount || 29.99,
+      });
     }
-  }, [subscriptionPlans]);
+  }, [adminSettings]);
 
-  // Update plan mutation
-  const updatePlan = useMutation({
-    mutationFn: async (plan: any) => {
-      // @ts-ignore - supabase type issues
-      const updateData = {
-        name: plan.name,
-        amount: plan.amount,
-        duration_days: plan.duration_days,
-        is_active: plan.is_active,
-      };
-      // @ts-ignore
-      const { error } = await (supabase as any)
-        .from("subscription_plans")
-        .update(updateData)
-        .eq("id", plan.id);
-      if (error) throw error;
-      return plan;
+  // Update credit settings mutation
+  const updateSettings = useMutation({
+    mutationFn: async () => {
+      const messageCostRate = parseFloat(creditSettings.messageCostRate.toString());
+      const minimumDepositAmount = parseFloat(creditSettings.minimumDepositAmount.toString());
+
+      if (isNaN(messageCostRate) || messageCostRate <= 0) {
+        throw new Error("Message cost rate must be a positive number");
+      }
+      if (isNaN(minimumDepositAmount) || minimumDepositAmount <= 0) {
+        throw new Error("Minimum deposit must be a positive number");
+      }
+
+      return rpc.settings.updateAdminSettings(messageCostRate, minimumDepositAmount);
     },
     onSuccess: () => {
-      toast.success("Plan updated!");
-      setEditingPlan(null);
-      queryClient.invalidateQueries({ queryKey: ["subscription_plans"] });
+      toast.success("Settings updated successfully!");
+      queryClient.invalidateQueries({ queryKey: ["admin_settings"] });
     },
     onError: (error: any) => {
-      toast.error(error.message || "Failed to update plan");
+      toast.error(error.message || "Failed to update settings");
     },
   });
 
-  // Create plan mutation
-  const createPlan = useMutation({
-    mutationFn: async (form: any) => {
-      const { data, error } = await supabase
-        .from("subscription_plans")
-        .insert({
-          name: form.name,
-          amount: form.amount,
-          duration_days: form.duration_days,
-          is_active: true,
-        } as any)
-        .select();
-      if (error) throw error;
-      return data?.[0];
-    },
-    onSuccess: () => {
-      toast.success("Plan created!");
-      setNewPlanForm({ name: "Standard Plan", amount: 99.99, duration_days: 30 });
-      queryClient.invalidateQueries({ queryKey: ["subscription_plans"] });
-    },
-    onError: (error: any) => {
-      toast.error(error.message || "Failed to create plan");
-    },
-  });
-
-  if (!user || user.role !== "admin") return null;
+  if (user?.role !== "admin") {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-neutral-950 to-neutral-900 flex items-center justify-center">
+        <div className="text-red-400">Access denied. Admin only.</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-neutral-950 via-neutral-900 to-neutral-950 text-white">
-      <header className="border-b border-white/10 bg-neutral-900/50 backdrop-blur-xl px-4 py-3 flex items-center justify-between sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <Link to="/admin">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-neutral-400 hover:text-white hover:bg-white/5"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-          </Link>
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center">
-            <Heart className="w-4 h-4 text-white" />
+    <div className="min-h-screen bg-gradient-to-b from-neutral-950 to-neutral-900 text-white">
+      <header className="border-b border-white/10 bg-neutral-900/50 backdrop-blur-xl px-4 py-3 sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link to="/admin">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-neutral-400 hover:text-white hover:bg-white/5"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+            </Link>
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center">
+              <Heart className="w-4 h-4 text-white" />
+            </div>
+            <h1 className="font-semibold">System Settings</h1>
           </div>
-          <h1 className="font-semibold">System Settings</h1>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={logout}
+            className="text-neutral-400 hover:text-red-400 hover:bg-red-500/10"
+          >
+            <LogOut className="w-5 h-5" />
+          </Button>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={logout}
-          className="text-neutral-400 hover:text-red-400 hover:bg-red-500/10"
-        >
-          <LogOut className="w-5 h-5" />
-        </Button>
       </header>
 
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <Tabs defaultValue="payment">
-          <TabsList className="bg-neutral-900 border border-neutral-800 mb-6">
-            <TabsTrigger
-              value="payment"
-              className="data-[state=active]:bg-rose-500/20 data-[state=active]:text-rose-400"
-            >
-              <DollarSign className="w-4 h-4 mr-2" />
-              Subscription Plans
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="payment" className="space-y-6">
-            {/* Create New Plan */}
-            <Card className="bg-neutral-900/60 border-neutral-800">
-              <CardHeader>
-                <CardTitle className="text-lg">Create New Subscription Plan</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm text-neutral-400 block mb-2">Plan Name</label>
+      <div className="max-w-4xl mx-auto px-4 py-12 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {/* Credit System Settings */}
+        <Card className="bg-white/[0.02] backdrop-blur-xl border border-white/5 rounded-3xl shadow-2xl overflow-hidden">
+          <CardHeader className="border-b border-white/5 pb-5">
+            <CardTitle className="flex items-center gap-3 text-xl font-bold tracking-tight text-white">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
+                <Zap className="w-5 h-5 text-rose-400" />
+              </div>
+              Credit System Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-8 space-y-8">
+            {/* Message Cost Rate */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-neutral-200 tracking-wide">
+                Message Cost Rate
+              </label>
+              <div className="flex gap-3 items-end">
+                <div className="flex-1">
+                  <div className="flex items-stretch bg-neutral-950/40 border border-white/10 rounded-2xl focus-within:border-rose-500/50 focus-within:ring-2 focus-within:ring-rose-500/10 transition-all overflow-hidden shadow-inner">
+                    <div className="flex items-center justify-center px-4 bg-white/[0.03] border-r border-white/10 text-neutral-400 font-bold select-none text-base min-h-[48px]">
+                      $
+                    </div>
                     <input
-                      className="w-full p-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm"
-                      placeholder="e.g., Standard Plan"
-                      value={newPlanForm.name}
-                      onChange={(e) =>
-                        setNewPlanForm({ ...newPlanForm, name: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-neutral-400 block mb-2">Amount ($)</label>
-                    <input
-                      className="w-full p-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm"
                       type="number"
+                      min="0.01"
                       step="0.01"
-                      placeholder="99.99"
-                      value={newPlanForm.amount}
+                      value={creditSettings.messageCostRate}
                       onChange={(e) =>
-                        setNewPlanForm({
-                          ...newPlanForm,
-                          amount: parseFloat(e.target.value),
+                        setCreditSettings({
+                          ...creditSettings,
+                          messageCostRate: parseFloat(e.target.value) || 0,
                         })
                       }
+                      className="w-full bg-transparent border-0 px-4 text-white placeholder:text-neutral-500 focus:outline-none focus:ring-0 text-base min-h-[48px]"
+                      disabled={updateSettings.isPending}
                     />
                   </div>
-                  <div>
-                    <label className="text-sm text-neutral-400 block mb-2">Duration (days)</label>
-                    <input
-                      className="w-full p-3 rounded-lg bg-neutral-800 border border-neutral-700 text-white text-sm"
-                      type="number"
-                      placeholder="30"
-                      value={newPlanForm.duration_days}
-                      onChange={(e) =>
-                        setNewPlanForm({
-                          ...newPlanForm,
-                          duration_days: parseInt(e.target.value),
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="flex items-end">
-                    <Button
-                      onClick={() => createPlan.mutate(newPlanForm)}
-                      disabled={createPlan.isPending}
-                      className="w-full bg-gradient-to-r from-rose-500 to-pink-600"
-                    >
-                      {createPlan.isPending ? "Creating..." : "Create Plan"}
-                    </Button>
-                  </div>
+                  <p className="text-xs text-neutral-400 mt-2 ml-1">
+                    Amount deducted from user credits for each message sent
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
-            {/* Existing Plans */}
-            <Card className="bg-neutral-900/60 border-neutral-800">
-              <CardHeader>
-                <CardTitle className="text-lg">Active Subscription Plans</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isLoading ? (
-                  <p className="text-neutral-400">Loading plans...</p>
-                ) : plans.length > 0 ? (
-                  <div className="space-y-4">
-                    {plans.map((plan) => (
-                      <div
-                        key={plan.id}
-                        className="p-4 rounded-lg bg-neutral-800/50 border border-neutral-700 space-y-3"
-                      >
-                        {editingPlan?.id === plan.id ? (
-                          <>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <label className="text-xs text-neutral-400 block mb-1">
-                                  Plan Name
-                                </label>
-                                <input
-                                  className="w-full p-2 rounded bg-neutral-700 border border-neutral-600 text-white text-sm"
-                                  value={editingPlan.name}
-                                  onChange={(e) =>
-                                    setEditingPlan({
-                                      ...editingPlan,
-                                      name: e.target.value,
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div>
-                                <label className="text-xs text-neutral-400 block mb-1">
-                                  Amount ($)
-                                </label>
-                                <input
-                                  className="w-full p-2 rounded bg-neutral-700 border border-neutral-600 text-white text-sm"
-                                  type="number"
-                                  step="0.01"
-                                  value={editingPlan.amount}
-                                  onChange={(e) =>
-                                    setEditingPlan({
-                                      ...editingPlan,
-                                      amount: parseFloat(e.target.value),
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div>
-                                <label className="text-xs text-neutral-400 block mb-1">
-                                  Duration (days)
-                                </label>
-                                <input
-                                  className="w-full p-2 rounded bg-neutral-700 border border-neutral-600 text-white text-sm"
-                                  type="number"
-                                  value={editingPlan.duration_days}
-                                  onChange={(e) =>
-                                    setEditingPlan({
-                                      ...editingPlan,
-                                      duration_days: parseInt(e.target.value),
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div className="flex gap-2 items-end">
-                                <Button
-                                  size="sm"
-                                  onClick={() =>
-                                    updatePlan.mutate(editingPlan)
-                                  }
-                                  disabled={updatePlan.isPending}
-                                  className="flex-1 bg-emerald-600 hover:bg-emerald-700"
-                                >
-                                  Save
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setEditingPlan(null)}
-                                  className="flex-1 border-neutral-600"
-                                >
-                                  Cancel
-                                </Button>
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <h3 className="font-medium text-white">{plan.name}</h3>
-                                <p className="text-sm text-neutral-400">
-                                  ${plan.amount.toFixed(2)} / {plan.duration_days} days
-                                </p>
-                              </div>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setEditingPlan(plan)}
-                                className="border-neutral-600"
-                              >
-                                Edit
-                              </Button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))}
+            {/* Minimum Deposit Amount */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-neutral-200 tracking-wide">
+                Minimum Deposit Amount (USD)
+              </label>
+              <div className="flex gap-3 items-end">
+                <div className="flex-1">
+                  <div className="flex items-stretch bg-neutral-950/40 border border-white/10 rounded-2xl focus-within:border-rose-500/50 focus-within:ring-2 focus-within:ring-rose-500/10 transition-all overflow-hidden shadow-inner">
+                    <div className="flex items-center justify-center px-4 bg-white/[0.03] border-r border-white/10 text-neutral-400 font-bold select-none text-base min-h-[48px]">
+                      $
+                    </div>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={creditSettings.minimumDepositAmount}
+                      onChange={(e) =>
+                        setCreditSettings({
+                          ...creditSettings,
+                          minimumDepositAmount: parseFloat(e.target.value) || 0,
+                        })
+                      }
+                      className="w-full bg-transparent border-0 px-4 text-white placeholder:text-neutral-500 focus:outline-none focus:ring-0 text-base min-h-[48px]"
+                      disabled={updateSettings.isPending}
+                    />
                   </div>
-                ) : (
-                  <p className="text-neutral-400">No plans created yet.</p>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                  <p className="text-xs text-neutral-400 mt-2 ml-1">
+                    Minimum amount users can deposit at once
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="pt-6 border-t border-white/5 flex justify-end">
+              <Button
+                className="bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white font-semibold shadow-lg shadow-rose-500/25 transition-all hover:scale-[1.02] rounded-xl px-6 py-5 h-auto text-sm"
+                onClick={() => updateSettings.mutate()}
+                disabled={updateSettings.isPending || settingsLoading}
+              >
+                {updateSettings.isPending ? "Saving..." : "Save Settings"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Info Section */}
+        <Card className="bg-gradient-to-r from-blue-500/10 to-indigo-500/10 border border-blue-500/20 rounded-3xl shadow-lg p-6">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-blue-300 font-bold text-lg">Credit System Overview</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm text-blue-200/90 leading-relaxed">
+            <p>
+              <strong>Message Cost Rate:</strong> Each message a user sends costs this amount in credits. Adjust this to control credit consumption.
+            </p>
+            <p>
+              <strong>Minimum Deposit:</strong> Users must deposit at least this amount when making a credit purchase. Users can deposit any amount &gt;= this minimum.
+            </p>
+            <p>
+              <strong>System:</strong> Users deposit money → Receive credits → Spend credits on messages
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

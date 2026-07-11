@@ -159,16 +159,13 @@ export const rpc = {
       return data as any;
     },
 
-    updateAgent: async (agentId: string, updates: { full_name?: string; status?: string }): Promise<any> => {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .update({
-          ...(updates.full_name && { full_name: updates.full_name }),
-          ...(updates.status && { status: updates.status }),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', agentId)
-        .select();
+    updateAgent: async (agentId: string, updates: { full_name?: string; status?: string; profile_photo?: string }): Promise<any> => {
+      const { data, error } = await supabase.rpc('update_agent_profile', {
+        p_agent_id: agentId,
+        p_full_name: updates.full_name || null,
+        p_profile_photo: updates.profile_photo || null,
+        p_status: updates.status || null,
+      });
       if (error) throw error;
       return data;
     },
@@ -208,6 +205,46 @@ export const rpc = {
       }
       return data;
     },
+
+    getUserNotes: async (userId: string): Promise<any> => {
+      const { data, error } = await supabase.rpc('agent_get_user_notes', { p_user_id: userId });
+      if (error) {
+        console.error('RPC Error - agent_get_user_notes:', error.message, error.details, error.code);
+        throw new Error(`Failed to load agent notes: ${error.message}`);
+      }
+      return data as any;
+    },
+
+    addUserNote: async (userId: string, content: string): Promise<any> => {
+      const { data, error } = await supabase.rpc('agent_add_user_note', { p_user_id: userId, p_content: content });
+      if (error) {
+        console.error('RPC Error - agent_add_user_note:', error.message, error.details, error.code);
+        throw new Error(`Failed to save agent note: ${error.message}`);
+      }
+      return data as any;
+    },
+
+    heartbeat: async (): Promise<any> => {
+      const { data, error } = await supabase.rpc('agent_heartbeat');
+      if (error) {
+        console.error('RPC Error - agent_heartbeat:', error.message, error.details, error.code);
+        throw new Error(`Heartbeat failed: ${error.message}`);
+      }
+      return data;
+    },
+
+    updateSelfProfile: async (updates: { full_name?: string; profile_photo?: string; age?: number; location?: string; bio?: string; interests?: string }): Promise<any> => {
+      const { data, error } = await supabase.rpc('agent_update_self_profile', {
+        p_full_name: updates.full_name,
+        p_profile_photo: updates.profile_photo,
+        p_age: updates.age,
+        p_location: updates.location,
+        p_bio: updates.bio,
+        p_interests: updates.interests,
+      });
+      if (error) throw error;
+      return data;
+    },
   },
 
   // Conversation functions
@@ -240,16 +277,25 @@ export const rpc = {
     },
 
     sendMessage: async (conversationId: number, content?: string, messageType = 'media', mediaUrl?: string, duration?: number) => {
-      const { data, error } = await supabase.rpc('conversation_send_message', {
+      const { data, error } = await supabase.rpc('user_send_message', {
         p_conversation_id: conversationId,
         p_content: content,
-        p_message_type: messageType,
+        p_type: messageType,
         p_media_url: mediaUrl,
         p_duration: duration,
       });
       if (error) {
-        console.error('RPC Error - conversation_send_message:', error.message, error.details, error.code);
+        console.error('RPC Error - user_send_message:', error.message, error.details, error.code);
         throw new Error(`Failed to send message: ${error.message}`);
+      }
+      return data;
+    },
+
+    deleteMessage: async (messageId: number) => {
+      const { data, error } = await supabase.rpc('user_delete_message', { p_message_id: messageId });
+      if (error) {
+        console.error('RPC Error - user_delete_message:', error.message, error.details, error.code);
+        throw new Error(`Failed to delete message: ${error.message}`);
       }
       return data;
     },
@@ -258,6 +304,38 @@ export const rpc = {
       const { data, error } = await supabase.rpc('conversation_mark_read', { p_conversation_id: conversationId });
       if (error) throw error;
       return data;
+    },
+
+    getOnlineAgents: async (): Promise<Array<{
+      agent_id: number;
+      display_name: string;
+      profile_photo: string | null;
+    }>> => {
+      const { data, error } = await supabase.rpc('get_online_agents');
+      if (error) {
+        console.error('RPC Error - get_online_agents:', error.message, error.details, error.code);
+        throw new Error(`Failed to load online agents: ${error.message}`);
+      }
+      return data || [];
+    },
+
+    reassignToActiveAgent: async (conversationId: number, targetAgentId?: number): Promise<{
+      success: boolean;
+      conversation_id?: number;
+      new_agent_id?: number;
+      new_agent_name?: string;
+      new_agent_photo?: string;
+      error?: string;
+    }> => {
+      const { data, error } = await supabase.rpc('conversation_reassign_to_active_agent', { 
+        p_conversation_id: conversationId,
+        p_target_agent_id: targetAgentId || null
+      });
+      if (error) {
+        console.error('RPC Error - conversation_reassign_to_active_agent:', error.message, error.details, error.code);
+        throw new Error(`Reassignment failed: ${error.message}`);
+      }
+      return data as any;
     },
   },
 
@@ -312,6 +390,24 @@ export const rpc = {
       if (error) throw error;
       return data;
     },
+
+    getAdminSettings: async (): Promise<any> => {
+      const { data, error } = await supabase.rpc('admin_settings_get');
+      if (error) throw error;
+      return data?.[0];
+    },
+
+    updateAdminSettings: async (messageCostRate?: number, minimumDepositAmount?: number): Promise<any> => {
+      const { data, error } = await supabase.rpc('admin_settings_update', {
+        p_message_cost_rate: messageCostRate,
+        p_minimum_deposit_amount: minimumDepositAmount,
+      });
+      if (error) {
+        console.error('RPC Error - admin_settings_update:', error.message, error.details, error.code);
+        throw new Error(`Failed to update admin settings: ${error.message}`);
+      }
+      return data as any;
+    },
   },
 
   // Payment functions
@@ -324,6 +420,81 @@ export const rpc = {
 
     getUserStatus: async (): Promise<any> => {
       const { data, error } = await supabase.rpc('subscription_get_user_status');
+      if (error) throw error;
+      return data as any;
+    },
+
+    // Credit system functions
+    getCreditPackages: async (): Promise<any> => {
+      const { data, error } = await supabase.rpc('credit_packages_get_all');
+      if (error) throw error;
+      return data as any;
+    },
+
+    getUserCreditsBalance: async (): Promise<any> => {
+      const { data, error } = await supabase.rpc('user_credits_get_balance');
+      if (error) throw error;
+      return data as any;
+    },
+
+    createDepositRequest: async (creditPackageId: string, paymentMethod: string): Promise<any> => {
+      const { data, error } = await supabase.rpc('payment_create_request', {
+        p_credit_package_id: creditPackageId,
+        p_payment_method: paymentMethod,
+      });
+      if (error) throw error;
+
+      // Fire admin notification email
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        const user = sessionData.session?.user;
+
+        if (token && user) {
+          const requestId = (data as any)?.requestId ?? (data as any)?.id;
+          const amount = (data as any)?.amount ?? 0;
+          const displayName = user.user_metadata?.full_name ?? user.user_metadata?.name ?? user.email ?? 'Unknown User';
+
+          await fetch(
+            'https://uyuecdtiupucoixnpwbz.supabase.co/functions/v1/send-payment-request',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                userName: displayName,
+                userEmail: user.email ?? '',
+                amount,
+                paymentMethod,
+                requestId: String(requestId),
+              }),
+            }
+          );
+        }
+      } catch (emailErr) {
+        console.error('send-payment-request email failed (non-fatal):', emailErr);
+      }
+
+      return data as any;
+    },
+
+    approveDeposit: async (paymentRequestId: string, creditsToGrant?: number, adminNotes?: string): Promise<any> => {
+      const { data, error } = await supabase.rpc('payment_approve_deposit', {
+        p_request_id: paymentRequestId,
+        p_credits_to_grant: creditsToGrant,
+        p_admin_notes: adminNotes,
+      });
+      if (error) {
+        console.error('RPC Error - payment_approve_deposit:', error.message, error.details, error.code);
+        throw new Error(`Failed to approve deposit: ${error.message}`);
+      }
+      return data as any;
+    },
+
+    getCreditTransactions: async (): Promise<any> => {
+      const { data, error } = await supabase.rpc('credit_transactions_get_user');
       if (error) throw error;
       return data as any;
     },
@@ -371,6 +542,49 @@ export const rpc = {
         }
       } catch (emailErr) {
         // Log but don't throw — payment request was already created successfully
+        console.error('send-payment-request email failed (non-fatal):', emailErr);
+      }
+
+      return data as any;
+    },
+
+    createCustomDeposit: async (amount: number, paymentMethod: string): Promise<any> => {
+      const { data, error } = await supabase.rpc('payment_create_custom_deposit', {
+        p_amount: amount,
+        p_payment_method: paymentMethod,
+      });
+      if (error) throw error;
+
+      // Fire admin notification email (non-fatal)
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        const user = sessionData.session?.user;
+
+        if (token && user) {
+          const requestId = (data as any)?.id ?? (data as any)?.request_id;
+          const displayName = user.user_metadata?.full_name ?? user.user_metadata?.name ?? user.email ?? 'Unknown User';
+
+          await fetch(
+            'https://uyuecdtiupucoixnpwbz.supabase.co/functions/v1/send-payment-request',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                userName: displayName,
+                userEmail: user.email ?? '',
+                amount,
+                paymentMethod,
+                requestId: String(requestId),
+                isCustomDeposit: true,
+              }),
+            }
+          );
+        }
+      } catch (emailErr) {
         console.error('send-payment-request email failed (non-fatal):', emailErr);
       }
 
@@ -431,5 +645,59 @@ export const rpc = {
       if (error) throw error;
       return data;
     },
+  },
+
+  // Agent profiles functions
+  agentProfiles: {
+    getAll: async (): Promise<any> => {
+      const { data, error } = await supabase.rpc('agent_profiles_get_all');
+      if (error) throw error;
+      return data as any;
+    },
+
+    updateProfile: async (agentProfileId: string, displayName?: string, profilePhoto?: string, bio?: string): Promise<any> => {
+      const { data, error } = await supabase
+        .from('agent_profiles')
+        .update({
+          ...(displayName && { display_name: displayName }),
+          ...(profilePhoto && { profile_photo: profilePhoto }),
+          ...(bio && { bio }),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', agentProfileId)
+        .select();
+      if (error) throw error;
+      return data;
+    },
+  },
+
+  // Profile media functions
+  profile: {
+    getMedia: async (userId: string): Promise<any[]> => {
+      const { data, error } = await supabase
+        .from('profile_media')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    addMedia: async (userId: string, mediaUrl: string): Promise<any> => {
+      const { data, error } = await supabase
+        .from('profile_media')
+        .insert({ user_id: userId, media_url: mediaUrl })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    deleteMedia: async (mediaId: number): Promise<any> => {
+      const { error } = await supabase
+        .from('profile_media')
+        .delete()
+        .eq('id', mediaId);
+      if (error) throw error;
+      return true;
+    }
   },
 };

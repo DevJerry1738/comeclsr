@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { Home, MessageCircle, Ticket, User, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ interface AppShellProps {
   showBackButton?: boolean;
   onBackClick?: () => void;
   rightAction?: ReactNode;
+  overflowHidden?: boolean;
 }
 
 export default function AppShell({
@@ -17,6 +18,7 @@ export default function AppShell({
   showBackButton = false,
   onBackClick,
   rightAction,
+  overflowHidden = false,
 }: AppShellProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -70,8 +72,8 @@ export default function AppShell({
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto pb-[calc(1rem+var(--bottom-nav-h))]">
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-200">
+      <main className={`flex-1 ${overflowHidden ? 'overflow-hidden flex flex-col' : 'overflow-y-auto pb-[calc(1rem+var(--bottom-nav-h))]'}`}>
+        <div className={`animate-in fade-in slide-in-from-bottom-2 duration-200 ${overflowHidden ? 'flex flex-col flex-1 h-full' : ''}`}>
           {children}
         </div>
       </main>

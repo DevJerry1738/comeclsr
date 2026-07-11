@@ -74,6 +74,18 @@ export type Database = {
         Insert: Omit<Database['public']['Tables']['messages']['Row'], 'id' | 'created_at'>;
         Update: Partial<Database['public']['Tables']['messages']['Insert']>;
       };
+      agent_user_notes: {
+        Row: {
+          id: number;
+          user_id: string;
+          agent_id: number;
+          content: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['agent_user_notes']['Row'], 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Database['public']['Tables']['agent_user_notes']['Insert']>;
+      };
       payments: {
         Row: {
           id: number;

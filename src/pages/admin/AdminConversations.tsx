@@ -57,12 +57,16 @@ export default function AdminConversations() {
     queryKey: ["conversations", "all"],
     queryFn: () => rpc.conversation.allConversations(),
     enabled: user?.role === "admin",
+    staleTime: 5 * 1000, // 5 seconds - conversations update frequently
+    gcTime: 2 * 60 * 1000, // 2 minutes
   });
 
   const { data: convMessages } = useQuery<Message[]>({
     queryKey: ["messages", viewConv],
     queryFn: () => rpc.conversation.getMessages(viewConv!),
     enabled: !!viewConv,
+    staleTime: 5 * 1000, // 5 seconds
+    gcTime: 2 * 60 * 1000, // 2 minutes
   });
 
   const approve = useMutation({

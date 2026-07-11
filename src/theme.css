@@ -1,0 +1,59 @@
+/* src/theme.css */
+:root {
+  /* Color Tokens */
+  --color-primary-500: 222 45% 38%; /* rose-500 */
+  --color-primary-600: 340 69% 47%; /* pink-600 */
+  --color-neutral-900: 240 6% 10%;
+  --color-neutral-800: 240 6% 15%;
+  --color-neutral-700: 240 5% 20%;
+  --color-neutral-600: 240 5% 30%;
+  --color-neutral-500: 240 4% 45%;
+  --color-neutral-400: 240 4% 55%;
+  --color-neutral-300: 240 5% 65%;
+  --color-neutral-200: 240 6% 75%;
+  --color-neutral-100: 240 7% 90%;
+  /* Spacing */
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-5: 1.25rem;
+  --spacing-6: 1.5rem;
+}
+
+[data-theme="dark"] {
+  --bg-primary: hsl(var(--color-primary-500));
+  --bg-primary-hover: hsl(var(--color-primary-600));
+  --bg-surface: hsl(var(--color-neutral-900));
+  --bg-surface-2: hsl(var(--color-neutral-800));
+  --text-primary: hsl(var(--color-neutral-100));
+  --text-secondary: hsl(var(--color-neutral-300));
+  --border-primary: hsl(var(--color-neutral-700));
+}
+
+[data-theme="light"] {
+  --bg-primary: hsl(var(--color-primary-600));
+  --bg-primary-hover: hsl(var(--color-primary-500));
+  --bg-surface: hsl(var(--color-neutral-100));
+  --bg-surface-2: hsl(var(--color-neutral-200));
+  --text-primary: hsl(var(--color-neutral-900));
+  --text-secondary: hsl(var(--color-neutral-700));
+  --border-primary: hsl(var(--color-neutral-300));
+}
+
+/* Utility classes */
+.bg-primary {
+  background-color: var(--bg-primary);
+}
+.bg-primary:hover {
+  background-color: var(--bg-primary-hover);
+}
+.text-primary {
+  color: var(--text-primary);
+}
+.text-secondary {
+  color: var(--text-secondary);
+}
+.border-primary {
+  border-color: var(--border-primary);
+}

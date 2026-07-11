@@ -14,6 +14,8 @@ export function usePendingPayment(userId?: string) {
       return data;
     },
     enabled: !!userId,
+    staleTime: 10 * 1000, // 10 seconds
+    gcTime: 5 * 60 * 1000, // 5 minutes
     select: (data) => {
       // Handle both single object and array responses
       if (Array.isArray(data)) {
