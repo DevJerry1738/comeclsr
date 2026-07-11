@@ -33,6 +33,7 @@ interface Agent {
   profile_photo?: string;
   status: string;
   role: string;
+  location_time_difference_hours?: number | null;
 }
 
 interface SeededCredential {
@@ -48,6 +49,7 @@ interface EditFormState {
   fullName: string;
   email: string;
   password?: string;
+  locationTimeDifferenceHours: string;
 }
 
 export default function AdminAgents() {
@@ -62,7 +64,7 @@ export default function AdminAgents() {
   const [loadingUpload, setLoadingUpload] = useState(false);
   const [isSeeded, setIsSeeded] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
-  const [editForm, setEditForm] = useState<EditFormState>({ fullName: "", email: "", password: "" });
+  const [editForm, setEditForm] = useState<EditFormState>({ fullName: "", email: "", password: "", locationTimeDifferenceHours: "" });
   
   // Fetch all agents
   const { data: agents, isLoading: agentsLoading } = useQuery({
@@ -70,7 +72,7 @@ export default function AdminAgents() {
     queryFn: async () => {
       const { data } = await supabase
         .from("user_profiles")
-        .select("id, email, full_name, status, role, profile_photo")
+        .select("id, email, full_name, status, role, profile_photo, location_time_difference_hours")
         .eq("role", "agent");
       return data as Agent[];
     },
@@ -121,9 +123,13 @@ export default function AdminAgents() {
   });
 
   const updateAgent = useMutation({
-    mutationFn: async (data: { agentId: string; fullName: string; email: string }) => {
+    mutationFn: async (data: { agentId: string; fullName: string; email: string; locationTimeDifferenceHours: number | null }) => {
       // Use RPC function to update agent (bypasses RLS)
-      await rpc.agent.updateAgent(data.agentId, { full_name: data.fullName, status: undefined });
+      await rpc.agent.updateAgent(data.agentId, {
+        full_name: data.fullName,
+        status: undefined,
+        location_time_difference_hours: data.locationTimeDifferenceHours,
+      });
     },
     onSuccess: () => {
       toast.success("Agent updated successfully");
@@ -179,7 +185,12 @@ export default function AdminAgents() {
   const handleEditClick = (agent: Agent) => {
     setEditingAgent(agent);
     setPhotoPreview(agent.profile_photo || "");
-    setEditForm({ fullName: agent.full_name || "", email: agent.email, password: "" });
+    setEditForm({
+      fullName: agent.full_name || "",
+      email: agent.email,
+      password: "",
+      locationTimeDifferenceHours: agent.location_time_difference_hours?.toString() || "",
+    });
     setShowEditDialog(true);
   };
 
@@ -235,10 +246,21 @@ export default function AdminAgents() {
       toast.error("Please fill in all required fields");
       return;
     }
+
+    const parsedOffset = editForm.locationTimeDifferenceHours.trim() === ""
+      ? null
+      : Number.parseInt(editForm.locationTimeDifferenceHours, 10);
+
+    if (editForm.locationTimeDifferenceHours.trim() !== "" && Number.isNaN(parsedOffset)) {
+      toast.error("Location time difference must be a whole number of hours");
+      return;
+    }
+
     updateAgent.mutate({
       agentId: editingAgent.id,
       fullName: editForm.fullName,
       email: editForm.email,
+      locationTimeDifferenceHours: parsedOffset,
     });
   };
 
@@ -375,6 +397,18 @@ export default function AdminAgents() {
                 placeholder="Email"
                 disabled={loadingUpload}
               />
+              <div className="space-y-2">
+                <label className="text-sm text-neutral-300">Default location time difference (hours)</label>
+                <input
+                  type="number"
+                  className="w-full p-3 rounded-lg bg-neutral-800 border border-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  value={editForm.locationTimeDifferenceHours}
+                  onChange={(e) => setEditForm({ ...editForm, locationTimeDifferenceHours: e.target.value })}
+                  placeholder="e.g. 10"
+                  disabled={loadingUpload}
+                />
+                <p className="text-xs text-neutral-500">Users will see “Agent Name is 10 hours away”.</p>
+              </div>
               <Button 
                 onClick={handleSaveEdit} 
                 disabled={loadingUpload || updateAgent.isPending}

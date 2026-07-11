@@ -159,12 +159,13 @@ export const rpc = {
       return data as any;
     },
 
-    updateAgent: async (agentId: string, updates: { full_name?: string; status?: string; profile_photo?: string }): Promise<any> => {
+    updateAgent: async (agentId: string, updates: { full_name?: string; status?: string; profile_photo?: string; location_time_difference_hours?: number | null }): Promise<any> => {
       const { data, error } = await supabase.rpc('update_agent_profile', {
         p_agent_id: agentId,
         p_full_name: updates.full_name || null,
         p_profile_photo: updates.profile_photo || null,
         p_status: updates.status || null,
+        p_location_time_difference_hours: updates.location_time_difference_hours ?? null,
       });
       if (error) throw error;
       return data;

@@ -11,6 +11,7 @@ export type Database = {
           gender: 'male' | 'female' | 'other' | null;
           age: number | null;
           location: string | null;
+          location_time_difference_hours: number | null;
           profile_photo: string | null;
           interests: string | null;
           bio: string | null;

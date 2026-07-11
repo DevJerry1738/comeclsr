@@ -7,6 +7,7 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { Send, Heart, MessageCircle, Clock, Check, CheckCheck, ArrowLeft, Trash2, Info, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { formatAgentDistanceLabel } from "@/lib/agentDistance";
 import AppShell from "@/components/AppShell";
 import AvatarRing from "@/components/AvatarRing";
 import ProfileMediaGallery from "@/components/ProfileMediaGallery";
@@ -34,6 +35,10 @@ export default function Messages() {
   });
 
   const activeConversation = conversations?.find((c: any) => c.id === selectedConversation);
+  const agentDistanceLabel = formatAgentDistanceLabel(
+    activeConversation?.agent_name,
+    activeConversation?.agent_location_time_difference_hours,
+  );
 
   const { data: messages } = useQuery({
     queryKey: ['messages', selectedConversation],
@@ -543,6 +548,9 @@ export default function Messages() {
                     <span className={`w-2 h-2 rounded-full ${activeConversation.agent_is_online ? "bg-emerald-400 animate-pulse" : "bg-neutral-600"}`} />
                     {activeConversation.agent_is_online ? "Online" : "Offline"}
                   </p>
+                  {agentDistanceLabel && (
+                    <p className="mt-2 text-sm text-emerald-300">{agentDistanceLabel}</p>
+                  )}
                 </div>
               </div>
 
